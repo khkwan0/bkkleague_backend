@@ -36,11 +36,14 @@ fastify.get('/', async (req, reply) => {
   return {hello: 'world'}
 })
 
+const teams = {}
+
 fastify.get('/matches', async (req, reply) => {
   try {
-    let query = 'select m.date, d.name, m.home_team_id, m.away_team_id from matches m, players_teams pt, divisions d where pt.player_id=? and (pt.team_id=m.home_team_id or pt.team_id=m.away_team_id) and m.division_id=d.id order by m.date'
+    let query = 'select y.*, tt.name as away_team_name, tt.short_name as away_team_short_name from (select x.*, t.name as home_team_name, t.short_name as home_team_short_name from (select m.date, d.name, m.home_team_id, m.away_team_id from matches m, players_teams pt, divisions d where pt.player_id=? and (pt.team_id=m.home_team_id or pt.team_id=m.away_team_id) and m.division_id=d.id) as x left join teams t on x.home_team_id=t.id) as y left join teams tt on y.away_team_id=tt.id order by y.date'
     let params = [1933]
     const res = await DoQuery(query, params)
+    console.log(res)
     return res
   } catch (e) {
     console.log(e)
@@ -67,7 +70,7 @@ fastify.ready().then(() => {
   fastify.io.on("connection", socket => {
     fastify.log.info('connection')
     socket.on('join', room => {
-      console.log('join', room)
+      fastify.log.info('join', room)
     })
   })
 })

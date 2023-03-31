@@ -1,0 +1,8 @@
+environment
+mysql/
+mongo/
+redis/
+etc/letsencrypt
+socketio-client/
+node_modules/
+.env

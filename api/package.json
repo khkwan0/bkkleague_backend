@@ -1,0 +1,16 @@
+{
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "fastify": "^4.15.0",
+    "fastify-socket.io": "^4.0.0",
+    "mongodb": "^5.1.0",
+    "mysql2": "^3.2.0",
+    "node-redis": "^0.1.7",
+    "socket.io": "^4.6.1"
+  },
+  "optionalDependencies": {
+    "bufferutil": "^4.0.7",
+    "utf-8-validate": "^6.0.3"
+  }
+}

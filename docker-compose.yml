@@ -1,0 +1,32 @@
+services:
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./etc/nginx:/etc/nginx
+    ports:
+      - "8081:80"
+  api:
+    build: ./api
+    volumes:
+      - ./api:/usr/src/app
+  wsclient:
+    build: ./socketio-client
+    volumes:
+      - ./socketio-client:/usr/src/app
+  mongo:
+    build: ./mongo
+    volumes:
+      - ./mongo/data:/data/db
+        #    entrypoint: ["/usr/bin/mongod", "--dbpath", "/data/db", "--bind_ip", "localhost,bkkleague-mongo-1", "--bind_ip_all", "--replSet", "rs0", "--auth", "--keyFile", "/usr/src/app/mongo.keyfile"]
+    entrypoint: ["/usr/bin/mongod", "--dbpath", "/data/db", "--bind_ip", "localhost,bkkleague-mongo-1", "--bind_ip_all", "--replSet", "rs0", "--keyFile", "/usr/src/app/mongo.keyfile"]
+  redis:
+    image: redis
+    volumes:
+      - ./redis:/data
+  mysql:
+    image: mysql_local:latest
+    env_file:
+      - environment
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+    

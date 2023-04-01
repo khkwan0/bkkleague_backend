@@ -3,6 +3,7 @@ import fastifyIO from 'fastify-socket.io'
 // import {MongoClient} from 'mongodb'
 import * as dotenv from 'dotenv'
 import * as mysql from 'mysql2'
+import phpUnserialize from 'phpunserialize'
 
 dotenv.config()
 /*
@@ -16,7 +17,9 @@ const mysqlHandle = mysql.createConnection({
   password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DB,
 })
+
 // let db = null
+
 const fastify = Fastify({ logger: true})
 
 const DoQuery = (queryString, params) => {
@@ -34,34 +37,26 @@ const DoQuery = (queryString, params) => {
 fastify.register(fastifyIO)
 
 fastify.get('/', async (req, reply) => {
-  return {hello: 'world'}
+  reply.code(403).send()
+})
+
+fastify.get('/season', (req, reply) => {
+  return {season: 9}
 })
 
 const teams = {}
 
 fastify.get('/matches', async (req, reply) => {
   try {
-    const date = new Date()
-    const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     const {userid, newonly} = req.query
-    let query = ''
-    let params = []
-    if (typeof userid !== 'undefined') {
-      params.push(parseInt(userid))
-      if (typeof newonly !== 'undefined') {
-        query = 'select y.*, tt.name as away_team_name, tt.short_name as away_team_short_name from (select x.*, t.name as home_team_name, t.short_name as home_team_short_name from (select m.date, d.name as division_name, m.home_team_id, m.away_team_id, v.* from matches m, players_teams pt, divisions d, venues v, teams where pt.player_id=? and m.date>=? and m.home_team_id=teams.id and teams.venue_id=v.id and (pt.team_id=m.home_team_id or pt.team_id=m.away_team_id) and m.division_id=d.id) as x left join teams t on x.home_team_id=t.id) as y left join teams tt on y.away_team_id=tt.id order by y.date'
-        params.push(today)
-      } else {
-        query = 'select y.*, tt.name as away_team_name, tt.short_name as away_team_short_name from (select x.*, t.name as home_team_name, t.short_name as home_team_short_name from (select m.date, d.name as division_name, m.home_team_id, m.away_team_id, v.* from matches m, players_teams pt, divisions d, venues v, teams where pt.player_id=? and m.home_team_id=teams.id and teams.venue_id=v.id and (pt.team_id=m.home_team_id or pt.team_id=m.away_team_id) and m.division_id=d.id) as x left join teams t on x.home_team_id=t.id) as y left join teams tt on y.away_team_id=tt.id order by y.date'
-      }
-    } else if (typeof newonly !== 'undefined') {
-        query = 'select y.*, tt.name as away_team_name, tt.short_name as away_team_short_name from (select x.*, t.name as home_team_name, t.short_name as home_team_short_name from (select m.date, d.name as division_name, m.home_team_id, m.away_team_id, v.* from matches m, players_teams pt, divisions d, venues v, teams where m.date>=? and m.home_team_id=teams.id and teams.venue_id=v.id and (pt.team_id=m.home_team_id or pt.team_id=m.away_team_id) and m.division_id=d.id) as x left join teams t on x.home_team_id=t.id) as y left join teams tt on y.away_team_id=tt.id order by y.date'
-      params.push[today]
-    } else {
-      query = 'select y.*, tt.name as away_team_name, tt.short_name as away_team_short_name from (select x.*, t.name as home_team_name, t.short_name as home_team_short_name from (select m.date, d.name as division_name, m.home_team_id, m.away_team_id, v.* from matches m, players_teams pt, divisions d, venues v, teams where m.home_team_id=teams.id and teams.venue_id=v.id and (pt.team_id=m.home_team_id or pt.team_id=m.away_team_id) and m.division_id=d.id) as x left join teams t on x.home_team_id=t.id) as y left join teams tt on y.away_team_id=tt.id order by y.date'
-    }
-    const res = await DoQuery(query, params)
-    return res
+    const res = await GetMatches(userid, newonly)
+
+    // format for season 9 is in php serialized form, convert to json
+    const _res = res.map(match => {
+      match.format = JSON.stringify(phpUnserialize(match.format))
+      return match
+    })
+    return _res
   } catch (e) {
     console.log(e)
   }
@@ -102,8 +97,14 @@ fastify.get('/players', async (req, reply) => {
 fastify.ready().then(() => {
   fastify.io.on("connection", socket => {
     fastify.log.info('connection')
+
     socket.on('join', room => {
-      fastify.log.info('join', room)
+      socket.join(room)
+      fastify.log.info('join: ' + room)
+    })
+
+    socket.on('frame_update', frame_info => {
+      console.log(frame_info)
     })
   })
 })
@@ -123,6 +124,110 @@ async function GetPlayersByTeamId(teamId) {
       ORDER BY nickname
     `
     let params=[teamId]
+    const res = await DoQuery(query, params)
+    return res
+  } catch (e) {
+    console.log(e)
+    return []
+  }
+}
+
+async function GetMatches(userid, newonly) {
+  try {
+    const date = new Date()
+    const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
+    let query = ''
+    let params = []
+    if (typeof userid !== 'undefined') {
+      params.push(parseInt(userid))
+      if (typeof newonly !== 'undefined') {
+        query = `
+          SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
+          FROM (
+            SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
+            FROM (
+              SELECT m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+              FROM matches m, players_teams pt, divisions d, venues v, teams
+              WHERE pt.player_id=?
+                AND m.date>=?
+                AND m.home_team_id=teams.id
+                AND teams.venue_id=v.id
+                AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
+                AND m.division_id=d.id
+            ) AS x
+            LEFT JOIN teams t
+              ON x.home_team_id=t.id
+          ) AS y
+          LEFT JOIN teams tt
+            ON y.away_team_id=tt.id
+          ORDER BY y.date
+        `
+        params.push(today)
+      } else {
+        query = `
+          SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
+          FROM (
+            SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
+            FROM (
+              SELECT m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+              FROM matches m, players_teams pt, divisions d, venues v, teams
+              WHERE pt.player_id=?
+                AND m.home_team_id=teams.id
+                AND teams.venue_id=v.id
+                AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
+                AND m.division_id=d.id
+            ) AS x
+            LEFT JOIN teams t
+              ON x.home_team_id=t.id
+          ) AS y
+          LEFT JOIN teams tt
+            ON y.away_team_id=tt.id
+          ORDER BY y.date
+        `
+      }
+    } else if (typeof newonly !== 'undefined') {
+      query = `
+        SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
+        FROM (
+          SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
+          FROM (
+            SELECT m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+            FROM matches m, players_teams pt, divisions d, venues v, teams
+            WHERE m.date>=?
+              AND m.home_team_id=teams.id
+              AND teams.venue_id=v.id
+              AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
+              AND m.division_id=d.id
+          ) AS x
+          LEFT JOIN teams t
+            ON x.home_team_id=t.id
+        ) AS y
+        LEFT JOIN teams tt
+          ON y.away_team_id=tt.id
+        ORDER BY y.date
+      `
+      params.push[today]
+    } else {
+      query = `
+        SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
+        FROM (
+          SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
+          FROM (
+            SELECT m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+            FROM matches m, players_teams pt, divisions d, venues v, teams
+            WHERE m.home_team_id=teams.id
+              AND teams.venue_id=v.id
+              AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
+              AND m.division_id=d.id
+          ) AS x
+          LEFT JOIN teams t
+            ON x.home_team_id=t.id
+        ) AS y
+        LEFT JOIN teams tt
+          ON y.away_team_id=tt.id
+        ORDER BY y.date
+      `
+    }
     const res = await DoQuery(query, params)
     return res
   } catch (e) {

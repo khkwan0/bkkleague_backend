@@ -18,6 +18,7 @@ const mysqlHandle = mysql.createConnection({
 })
 // let db = null
 const fastify = Fastify({ logger: true})
+
 const DoQuery = (queryString, params) => {
   return new Promise((resolve, reject) => {
     mysqlHandle.execute(queryString, params, (err, results, fields) => {
@@ -66,6 +67,22 @@ fastify.get('/matches', async (req, reply) => {
   }
 })
 
+fastify.get('/players', async (req, reply) => {
+  try {
+    const {teamid} = req.query
+    if (typeof teamid !== 'undefined' && teamid) {
+      const _teamid = parseInt(teamid)
+      const res = await GetPlayersByTeamId(_teamid) 
+      return res
+    } else {
+      return []
+    }
+  } catch (e) {
+    console.log(e)
+    return []
+  }
+})
+
 ;(async () => {
   try {
     /*
@@ -90,3 +107,26 @@ fastify.ready().then(() => {
     })
   })
 })
+
+async function GetPlayersByTeamId(teamId) {
+  try {
+    let query = `
+      SELECT
+        p.id as playerId,
+        p.nickname as nickname,
+        p.firstName as firstName,
+        p.lastName as lastName,
+        p.profile_picture as avatar
+      FROM players_teams pt, players p
+      WHERE team_id=?
+      AND pt.player_id=p.id
+      ORDER BY nickname
+    `
+    let params=[teamId]
+    const res = await DoQuery(query, params)
+    return res
+  } catch (e) {
+    console.log(e)
+    return []
+  }
+}

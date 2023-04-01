@@ -44,7 +44,18 @@ fastify.get('/season', (req, reply) => {
   return {season: 9}
 })
 
-const teams = {}
+fastify.get('/game/types', async (req, reply) => {
+  try {
+    const _res = await GetGameTypes()
+    const res = {}
+    _res.forEach(gameType => {
+      res[gameType.short_name] = gameType
+    })
+    return res
+  } catch (e) {
+    console.log(e)
+  }
+})
 
 fastify.get('/matches', async (req, reply) => {
   try {
@@ -59,6 +70,7 @@ fastify.get('/matches', async (req, reply) => {
     return _res
   } catch (e) {
     console.log(e)
+    return []
   }
 })
 
@@ -108,6 +120,19 @@ fastify.ready().then(() => {
     })
   })
 })
+
+async function GetGameTypes() {
+  try {
+    let query = `
+      SELECT name, short_name, alt_name, no_players 
+      FROM frame_types
+    `
+    const res = await DoQuery(query, [])
+    return res
+  } catch (e) {
+    throw new Error(e)
+  }
+}
 
 async function GetPlayersByTeamId(teamId) {
   try {

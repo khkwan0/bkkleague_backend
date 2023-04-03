@@ -11,7 +11,7 @@ const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
 */
 
-const mysqlHandle = mysql.createConnection({
+const mysqlHandle = mysql.createPool({
   host: process.env.MYSQL_HOST,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
@@ -115,8 +115,14 @@ fastify.ready().then(() => {
       fastify.log.info('join: ' + room)
     })
 
-    socket.on('frame_update', frame_info => {
+    socket.on('frame_update_players', frame_info => {
       console.log(frame_info)
+    })
+
+    socket.on('frame_update_win', data => {
+      console.log(data)
+      const room = 'match_' + data.matchId
+      socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.frameIdx, winnerTeamId: data.winnerTeamId})
     })
   })
 })
@@ -171,7 +177,7 @@ async function GetMatches(userid, newonly) {
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.date>=?
@@ -194,7 +200,7 @@ async function GetMatches(userid, newonly) {
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+              SELECT m.id as match_id, m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.home_team_id=teams.id
@@ -216,7 +222,7 @@ async function GetMatches(userid, newonly) {
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+            SELECT m.id as match_id, m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
             FROM matches m, players_teams pt, divisions d, venues v, teams
             WHERE m.date>=?
               AND m.home_team_id=teams.id
@@ -238,7 +244,7 @@ async function GetMatches(userid, newonly) {
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+            SELECT m.id as match_id, m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
             FROM matches m, players_teams pt, divisions d, venues v, teams
             WHERE m.home_team_id=teams.id
               AND teams.venue_id=v.id

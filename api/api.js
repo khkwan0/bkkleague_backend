@@ -22,7 +22,12 @@ const mysqlHandle = mysql.createPool({
   database: process.env.MYSQL_DB,
 })
 
-const redisClient = createClient({url: process.env.redisClient})
+const redisClient = createClient({url: process.env.REDIS_HOST})
+;(async () => {
+  await redisClient.connect()
+  console.log("Redis HOST: ", process.env.REDIS_HOST)
+  console.log("Redis is: ", redisClient.isReady ? "Up": "Down")
+})()
 
 // let db = null
 
@@ -134,8 +139,11 @@ fastify.ready().then(() => {
   fastify.io.on("connection", socket => {
     fastify.log.info('connection')
 
-    socket.on('join', room => {
+    socket.on('join', (room, cb) => {
       socket.join(room)
+      cb({
+        status: 'ok'
+      })
       fastify.log.info('join: ' + room)
     })
 
@@ -144,7 +152,6 @@ fastify.ready().then(() => {
     })
 
     socket.on('frame_update_win', data => {
-      console.log(data)
       const room = 'match_' + data.matchId
       ;(async () => {
         const res = await UpdateFrame(data, room) // use room as a key to lock
@@ -152,11 +159,12 @@ fastify.ready().then(() => {
       socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.frameIdx, winnerTeamId: data.winnerTeamId})
     })
 
-    socket.on('getframes', data => {
+    socket.on('getframes', (data, cb) => {
       ;(async () => {
         try {
-          const res = await CachetGet(key)
-          socket.emit('frameinfo', JSON.pares(res))
+          const key = 'match_' + data.matchId
+          const res = await CacheGet(key)
+          cb(JSON.parse(res))
         } catch (e) {
           console.log(e)
         }
@@ -168,7 +176,7 @@ fastify.ready().then(() => {
 async function UpdateFrame(data, lockKey) {
   try {
     await lock.acquire(lockKey, async () => {
-      const key = 'matchId_' + data.MacthId
+      const key = 'match_' + data.matchId
       const rawCachedMatchInfo = await CacheGet(key)
       // if we get something back from redis...
       if (typeof rawCachedMatchInfo !== 'undefined' && rawCachedMatchInfo) {
@@ -180,39 +188,56 @@ async function UpdateFrame(data, lockKey) {
         if (typeof cachedMatchInfo.frames === 'undefined' || !Array.isArray(cachedMatchInfo.frames)) {
           cachedMatchInfo.frames = []
         }
+
+        // look for an existing frame (updating)
         let i = 0
         let found = false
-        while (i < cachedMatchjInfo.frames && !found) {
+        while (i < cachedMatchInfo.frames && !found) {
           if (cachedMatchInfo.frames[i].frameIdx === data.frameId) {
             found = true
           } else {
             i++
           }
         }
+
+        // handle win situation
         if (data.type === 'win') {
+
+          // if updatable...
           if (found) {
-            cachedMatchInfo.frames[i].winner = data.winnerId
+            cachedMatchInfo.frames[i].winner = data.winnerTeamId
+            cachedMatchInfo.frames[i].winningPlayers = data.playerIds
           } else {
+
+            // otherwise, add the frame data
             cachedMatchInfo.frames.push({
-              winner: data.winnerId,
+              frameIdx: data.frameIdx,
+              winner: data.winnerTeamId,
+              winningPlayers: data.playerIds,
               homePlayerIds: [],
-              awayPlayerIds: []
+              awayPlayerIds: [],
             })
           }
         } else if (data.type === 'players') {
         }
+
+        // save it
         const serializedMatchInfo = JSON.stringify(cachedMatchInfo)
-        CacheSet(key, serializeMatchInfo)
+        CacheSet(key, serializedMatchInfo)
       } else {
+
+        // completely new match, not in redis yet
         const matchInfo = {
           matchId: data.matchId,
           frames: []
         }
         if (data.type === 'win') {
           matchInfo.frames.push({
-            winner: data.winnerId,
+            frameIdx: data.frameIdx,
+            winner: data.winnerTeamId,
+            winningPlayers: data.playerIds, 
             homePlayerIds: [],
-            awayPlayerIds: []
+            awayPlayerIds: [],
           })
         } else if (data.type === 'players') {
         }

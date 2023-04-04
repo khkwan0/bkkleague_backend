@@ -4,6 +4,8 @@ import fastifyIO from 'fastify-socket.io'
 import * as dotenv from 'dotenv'
 import * as mysql from 'mysql2'
 import phpUnserialize from 'phpunserialize'
+import AsyncLock from 'async-lock'
+import {createClient} from 'redis'
 
 dotenv.config()
 /*
@@ -11,12 +13,16 @@ const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
 */
 
+const lock = new AsyncLock()
+
 const mysqlHandle = mysql.createPool({
   host: process.env.MYSQL_HOST,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DB,
 })
+
+const redisClient = createClient({url: process.env.redisClient})
 
 // let db = null
 
@@ -32,6 +38,24 @@ const DoQuery = (queryString, params) => {
       }
     })
   })
+}
+
+async function CacheGet(key) {
+  try {
+    const res = await redisClient.get(key)
+    return res
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
+
+async function CacheSet(key, value) {
+  try {
+    await redisClient.set(key, value)
+  } catch(e) {
+    console.log(e)
+  }
 }
 
 fastify.register(fastifyIO)
@@ -122,10 +146,84 @@ fastify.ready().then(() => {
     socket.on('frame_update_win', data => {
       console.log(data)
       const room = 'match_' + data.matchId
+      ;(async () => {
+        const res = await UpdateFrame(data, room) // use room as a key to lock
+      })()
       socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.frameIdx, winnerTeamId: data.winnerTeamId})
+    })
+
+    socket.on('getframes', data => {
+      ;(async () => {
+        try {
+          const res = await CachetGet(key)
+          socket.emit('frameinfo', JSON.pares(res))
+        } catch (e) {
+          console.log(e)
+        }
+      })()
     })
   })
 })
+
+async function UpdateFrame(data, lockKey) {
+  try {
+    await lock.acquire(lockKey, async () => {
+      const key = 'matchId_' + data.MacthId
+      const rawCachedMatchInfo = await CacheGet(key)
+      // if we get something back from redis...
+      if (typeof rawCachedMatchInfo !== 'undefined' && rawCachedMatchInfo) {
+
+        //  ... then parse it
+        const cachedMatchInfo = JSON.parse(rawCachedMatchInfo)
+
+        // check if the parsed object has a property called frames and that it is an array
+        if (typeof cachedMatchInfo.frames === 'undefined' || !Array.isArray(cachedMatchInfo.frames)) {
+          cachedMatchInfo.frames = []
+        }
+        let i = 0
+        let found = false
+        while (i < cachedMatchjInfo.frames && !found) {
+          if (cachedMatchInfo.frames[i].frameIdx === data.frameId) {
+            found = true
+          } else {
+            i++
+          }
+        }
+        if (data.type === 'win') {
+          if (found) {
+            cachedMatchInfo.frames[i].winner = data.winnerId
+          } else {
+            cachedMatchInfo.frames.push({
+              winner: data.winnerId,
+              homePlayerIds: [],
+              awayPlayerIds: []
+            })
+          }
+        } else if (data.type === 'players') {
+        }
+        const serializedMatchInfo = JSON.stringify(cachedMatchInfo)
+        CacheSet(key, serializeMatchInfo)
+      } else {
+        const matchInfo = {
+          matchId: data.matchId,
+          frames: []
+        }
+        if (data.type === 'win') {
+          matchInfo.frames.push({
+            winner: data.winnerId,
+            homePlayerIds: [],
+            awayPlayerIds: []
+          })
+        } else if (data.type === 'players') {
+        }
+        const serializedMatchInfo = JSON.stringify(matchInfo)
+        CacheSet(key, serializedMatchInfo)
+      }
+    })
+  } catch (e) {
+    console.log(e)
+  }
+}
 
 async function GetGameTypes() {
   try {

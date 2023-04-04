@@ -29,4 +29,7 @@ services:
       - environment
     volumes:
       - ./mysql/data:/var/lib/mysql
-    
+  phpmyadmin:
+    image: phpmyadmin
+    env_file:
+      - environment

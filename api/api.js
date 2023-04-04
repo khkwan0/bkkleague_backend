@@ -159,6 +159,32 @@ fastify.ready().then(() => {
       socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.frameIdx, winnerTeamId: data.winnerTeamId})
     })
 
+    socket.on('updatematchinfo', data => {
+      const room = 'match_' + data.matchId
+      const lockKey = 'matchinfo_' + data.matchId
+      ;(async () => {
+        const res = await UpdateMatch(data, lockKey) // use room as a key to lock
+      })()
+      socket.to(room).emit("matchupdate", data)
+    })
+
+    socket.on('getmatchinfo', (data, cb)  => {
+      ;(async () => {
+        try {
+          const key = 'matchinfo_' + data.matchId
+          const res = await CacheGet(key)
+          if (res) {
+            cb(JSON.parse(res))
+          } else {
+            cb(null)
+          }
+        } catch (e) {
+          console.log(e)
+          cb({status: 'err', msg: 'no match info'})
+        }
+      })()
+    })
+
     socket.on('getframes', (data, cb) => {
       ;(async () => {
         try {
@@ -173,27 +199,53 @@ fastify.ready().then(() => {
   })
 })
 
+async function UpdateMatch(data, lockKey) {
+  try {
+    await lock.acquire(lockKey, async () => {
+      const redisKey = lockKey
+      const rawCachedMatchInfo = await CacheGet(redisKey)
+      if (typeof rawCachedMatchInfo !== 'undefined' && rawCachedMatchInfo) {
+        const cachedMatchInfo = JSON.parse(rawCachedMatchInfo)
+        Object.keys(data).forEach(key => {
+          cachedMatchInfo[key] = data[key]
+        })
+        const serializedMatchInfo = JSON.stringify(cachedMatchInfo)
+        await CacheSet(redisKey, serializedMatchInfo)
+      } else {
+        const matchInfo = {}
+        Object.keys(data).forEach(key => {
+          matchInfo[key] = data[key]
+        })
+        const serializedMatchInfo = JSON.stringify(matchInfo)
+        await CacheSet(redisKey, serializedMatchInfo)
+      }
+    })
+  } catch (e) {
+    console.log(e)
+  }
+}
+
 async function UpdateFrame(data, lockKey) {
   try {
     await lock.acquire(lockKey, async () => {
       const key = 'match_' + data.matchId
-      const rawCachedMatchInfo = await CacheGet(key)
+      const rawCachedFrameInfo = await CacheGet(key)
       // if we get something back from redis...
-      if (typeof rawCachedMatchInfo !== 'undefined' && rawCachedMatchInfo) {
+      if (typeof rawCachedFrameInfo !== 'undefined' && rawCachedFrameInfo) {
 
         //  ... then parse it
-        const cachedMatchInfo = JSON.parse(rawCachedMatchInfo)
+        const cachedFrameInfo = JSON.parse(rawCachedFrameInfo)
 
         // check if the parsed object has a property called frames and that it is an array
-        if (typeof cachedMatchInfo.frames === 'undefined' || !Array.isArray(cachedMatchInfo.frames)) {
-          cachedMatchInfo.frames = []
+        if (typeof cachedFrameInfo.frames === 'undefined' || !Array.isArray(cachedFrameInfo.frames)) {
+          cachedFrameInfo.frames = []
         }
 
         // look for an existing frame (updating)
         let i = 0
         let found = false
-        while (i < cachedMatchInfo.frames && !found) {
-          if (cachedMatchInfo.frames[i].frameIdx === data.frameId) {
+        while (i < cachedFrameInfo.frames && !found) {
+          if (cachedFrameInfo.frames[i].frameIdx === data.frameId) {
             found = true
           } else {
             i++
@@ -205,12 +257,12 @@ async function UpdateFrame(data, lockKey) {
 
           // if updatable...
           if (found) {
-            cachedMatchInfo.frames[i].winner = data.winnerTeamId
-            cachedMatchInfo.frames[i].winningPlayers = data.playerIds
+            cachedFrameInfo.frames[i].winner = data.winnerTeamId
+            cachedFrameInfo.frames[i].winningPlayers = data.playerIds
           } else {
 
             // otherwise, add the frame data
-            cachedMatchInfo.frames.push({
+            cachedFrameInfo.frames.push({
               frameIdx: data.frameIdx,
               winner: data.winnerTeamId,
               winningPlayers: data.playerIds,
@@ -222,17 +274,17 @@ async function UpdateFrame(data, lockKey) {
         }
 
         // save it
-        const serializedMatchInfo = JSON.stringify(cachedMatchInfo)
+        const serializedMatchInfo = JSON.stringify(cachedFrameInfo)
         CacheSet(key, serializedMatchInfo)
       } else {
 
         // completely new match, not in redis yet
-        const matchInfo = {
+        const frameInfo = {
           matchId: data.matchId,
           frames: []
         }
         if (data.type === 'win') {
-          matchInfo.frames.push({
+          frameInfo.frames.push({
             frameIdx: data.frameIdx,
             winner: data.winnerTeamId,
             winningPlayers: data.playerIds, 
@@ -241,8 +293,8 @@ async function UpdateFrame(data, lockKey) {
           })
         } else if (data.type === 'players') {
         }
-        const serializedMatchInfo = JSON.stringify(matchInfo)
-        CacheSet(key, serializedMatchInfo)
+        const serializedFrameInfo = JSON.stringify(frameInfo)
+        CacheSet(key, serializedFrameInfo)
       }
     })
   } catch (e) {

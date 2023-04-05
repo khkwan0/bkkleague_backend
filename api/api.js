@@ -147,8 +147,13 @@ fastify.ready().then(() => {
       fastify.log.info('join: ' + room)
     })
 
-    socket.on('frame_update_players', frame_info => {
-      console.log(frame_info)
+    socket.on('frame_update_players', data => {
+      const room = 'match_' + data.matchId
+      ;(async () => {
+        data.type = 'players'
+        const res = await UpdateFrame(data, room)
+      })()
+      socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.frameIdx, playerIdx: data.playerIdx, side: data.side, playerId: data.playerId})
     })
 
     socket.on('frame_update_win', data => {
@@ -244,8 +249,8 @@ async function UpdateFrame(data, lockKey) {
         // look for an existing frame (updating)
         let i = 0
         let found = false
-        while (i < cachedFrameInfo.frames && !found) {
-          if (cachedFrameInfo.frames[i].frameIdx === data.frameId) {
+        while (i < cachedFrameInfo.frames.length && !found) {
+          if (cachedFrameInfo.frames[i].frameIdx === data.frameIdx) {
             found = true
           } else {
             i++
@@ -271,6 +276,27 @@ async function UpdateFrame(data, lockKey) {
             })
           }
         } else if (data.type === 'players') {
+          if (found) {
+            if (data.side === 'home') {
+              cachedFrameInfo.frames[i].homePlayerIds[data.playerIdx] = data.playerId
+            } else {
+              cachedFrameInfo.frames[i].awayPlayerIds[data.playerIdx] = data.playerId
+            }
+          } else {
+            const newFrame = {
+              frameIdx: data.frameIdx,
+              winner: 0,
+              winningPlayers: [],
+              homePlayerIds: [],
+              awayPlayerIds: [],
+            }
+            if (data.side === 'home') {
+              newFrame.homePlayerIds[data.playerIdx] = data.playerId
+            } else {
+              newFrame.awayPlayerIds[data.playerIdx] = data.playerId
+            }
+            cachedFrameInfo.frames.push(newFrame)
+          }
         }
 
         // save it
@@ -292,6 +318,19 @@ async function UpdateFrame(data, lockKey) {
             awayPlayerIds: [],
           })
         } else if (data.type === 'players') {
+          const newFrame = {
+            frameIdx: data.frameIdx,
+            winner: 0,
+            winningPlayers: [],
+            homePlayerIds: [],
+            awayPlayerIds: [],
+          }
+          if (data.side === 'home') {
+            newFrame.homePlayerIds[data.playerIdx] = data.playerId
+          } else {
+            newFrame.awayPlayerIds[data.playerIdx] = data.playerId
+          }
+          frameInfo.frames.push(newFrame)
         }
         const serializedFrameInfo = JSON.stringify(frameInfo)
         CacheSet(key, serializedFrameInfo)

@@ -162,6 +162,15 @@ fastify.ready().then(() => {
       fastify.log.info('join: ' + room)
     })
 
+    socket.on('incoming', data => {
+      fastify.log.info('WS incoming: ' + JSON.stringify(data))
+      if (data.type === 'newNote') {
+        const room = 'match_' + data.matchId
+        const newNote = data.newNote
+        console.log(newNote)
+      }
+    })
+
     socket.on('frame_update_players', data => {
       const room = 'match_' + data.matchId
       fastify.log.info('WS: frame_update_players')
@@ -174,6 +183,7 @@ fastify.ready().then(() => {
 
     socket.on('frame_update_win', data => {
       const room = 'match_' + data.matchId
+      fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
       ;(async () => {
         const res = await UpdateFrame(data, room) // use room as a key to lock
       })()
@@ -182,6 +192,7 @@ fastify.ready().then(() => {
 
     socket.on('updatematchinfo', data => {
       const room = 'match_' + data.matchId
+      fastify.log.info(room + ' - updatematchinfo: ' + JSON.stringify(data))
       const lockKey = 'matchinfo_' + data.matchId
       ;(async () => {
         const res = await UpdateMatch(data, lockKey) // use room as a key to lock
@@ -190,6 +201,7 @@ fastify.ready().then(() => {
     })
 
     socket.on('getmatchinfo', (data, cb)  => {
+      fastify.log.info('socket ' + socket.id + ' - getmatchinfo: ' + JSON.stringify(data))
       ;(async () => {
         try {
           const key = 'matchinfo_' + data.matchId

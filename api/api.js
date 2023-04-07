@@ -169,7 +169,7 @@ fastify.ready().then(() => {
         data.type = 'players'
         const res = await UpdateFrame(data, room)
       })()
-      socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.frameIdx, playerIdx: data.playerIdx, side: data.side, playerId: data.playerId, data.newPlayer})
+      socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.frameIdx, playerIdx: data.playerIdx, side: data.side, playerId: data.playerId, newPlayer: data.newPlayer})
     })
 
     socket.on('frame_update_win', data => {

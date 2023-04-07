@@ -111,11 +111,26 @@ fastify.get('/players', async (req, reply) => {
       const res = await GetPlayersByTeamId(_teamid) 
       return res
     } else {
-      return []
+      const res = await GetAllPlayers()
+      return res
     }
   } catch (e) {
     console.log(e)
     return []
+  }
+})
+
+fastify.post('/player', async (req, reply) => {
+  try {
+    if (typeof req.body.nickName !== 'undefined' && req.body.nickName.length > 2) {
+      const _res = await SaveNewPlayer(req.body)
+      return {status: 'ok', data: {playerId: _res.playerId}}
+    } else {
+      return {status: 'err', msg: 'Nickname is too short'}
+    }
+  } catch (e) {
+    console.log(e)
+    return {status: 'err', msg: 'Server error'}
   }
 })
 
@@ -149,11 +164,12 @@ fastify.ready().then(() => {
 
     socket.on('frame_update_players', data => {
       const room = 'match_' + data.matchId
+      fastify.log.info('WS: frame_update_players')
       ;(async () => {
         data.type = 'players'
         const res = await UpdateFrame(data, room)
       })()
-      socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.frameIdx, playerIdx: data.playerIdx, side: data.side, playerId: data.playerId})
+      socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.frameIdx, playerIdx: data.playerIdx, side: data.side, playerId: data.playerId, data.newPlayer})
     })
 
     socket.on('frame_update_win', data => {
@@ -204,6 +220,33 @@ fastify.ready().then(() => {
   })
 })
 
+async function SaveNewPlayer(newPlayer) {
+  try {
+    const {nickName, firstName, lastName, email, teamId} = newPlayer
+    let query = `
+      INSERT INTO players (nickname, firstname, lastname, email, merged_with_id)
+      VALUES(?, ?, ?, ?, 0)
+    `
+    const params = [nickName, firstName, lastName, email]
+    const res = await DoQuery(query, params)
+    const playerId = res.insertId
+    let playersTeamId = 0
+    if (typeof teamId !== 'undefined' && teamId) {
+      query = `
+        INSERT INTO players_teams(team_id, player_id)
+        values(?, ?)
+      `
+      const params2 = [teamId, playerId]
+      const res2 = await DoQuery(query, params2)
+      playersTeamId = res2.insertId
+    }
+    return {playerId, playersTeamId}
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function UpdateMatch(data, lockKey) {
   try {
     await lock.acquire(lockKey, async () => {
@@ -234,6 +277,7 @@ async function UpdateFrame(data, lockKey) {
   try {
     await lock.acquire(lockKey, async () => {
       const key = 'match_' + data.matchId
+      console.log(key)
       const rawCachedFrameInfo = await CacheGet(key)
       // if we get something back from redis...
       if (typeof rawCachedFrameInfo !== 'undefined' && rawCachedFrameInfo) {
@@ -338,6 +382,19 @@ async function UpdateFrame(data, lockKey) {
     })
   } catch (e) {
     console.log(e)
+  }
+}
+
+async function GetAllPlayers() {
+  try {
+    let query = `
+      SELECT players.id as playerId, players.nickname, players.firstName, players.lastName
+      FROM players
+    `
+    const res = await DoQuery(query, [])
+    return res
+  } catch (e) {
+    throw new Error(e)
   }
 }
 

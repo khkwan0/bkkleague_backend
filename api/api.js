@@ -6,7 +6,6 @@ import * as mysql from 'mysql2'
 import phpUnserialize from 'phpunserialize'
 import AsyncLock from 'async-lock'
 import {createClient} from 'redis'
-import {DateTime} from 'luxon'
 
 dotenv.config()
 /*
@@ -291,30 +290,28 @@ async function FormatHistory(history) {
       const playerNickname = player ? player[0].nickname : 'Player'
       const type = _hist.data.type
       const data = _hist.data.data
-      const time = DateTime.fromMillis(_hist.timestamp).toLocaleString(DateTime.DATETIME_SHORT_WITH_SECONDS)
-      const toReturn = []
+      const toReturn = {
+        timestamp: _hist.timestamp,
+        msg: [],
+      }
       if (type === 'win') {
-        toReturn.push(`(${time})`)
-        toReturn.push(`${playerNickname} set WIN frame: ${data.frameNumber}`)
+        toReturn.msg.push(`${playerNickname} set WIN frame: ${data.frameNumber}`)
         return toReturn
       }
       if (type === 'players') {
         const framePlayer = await GetPlayer(data.playerId)
         const framePlayerNickname = framePlayer ? framePlayer[0].nickname : 'player'
-        toReturn.push(`(${time})`)
-        toReturn.push(`${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`)
+        toReturn.msg.push(`${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`)
         return toReturn
       }
       if (type === 'firstbreak') {
         const team = await GetTeam(data.firstBreak)
         const teamShortName = team ? team[0].short_name : 'team'
-        toReturn.push(`(${time})`)
-        toReturn.push(`${playerNickname} set first break: ${teamShortName}`)
+        toReturn.msg.push(`${playerNickname} set first break: ${teamShortName}`)
         return toReturn
       }
       if (type === 'finalize') {
-        toReturn.push(`(${time})`)
-        toReturn.push(`${playerNickname} signed the results.`)
+        toReturn.msg.push(`${playerNickname} signed the results.`)
         return toReturn
       }
     }))

@@ -169,11 +169,6 @@ fastify.ready().then(() => {
           if (typeof data.matchId !== 'undefined' && data.matchId) {
             const room = 'match_' + data.matchId
 
-            if (data.type === 'newNote') {
-              const newNote = data.newNote
-              console.log(newNote)
-            }
-
             if (data.type === 'win') {
               fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
               data.data.type = data.type
@@ -192,7 +187,7 @@ fastify.ready().then(() => {
 
             if (data.type === 'firstbreak') {
               fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
-              const lockKey = 'matchinfo_' + data.data.matchId
+              const lockKey = 'matchinfo_' + data.matchId
               await Unfinalize(data.matchId)
               const res = await UpdateMatch(data.data, lockKey) // use room as a key to lock
               socket.to(room).emit("matchupdate", data)
@@ -200,11 +195,18 @@ fastify.ready().then(() => {
 
             if (data.type === 'finalize') {
               fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
-              const lockKey = 'matchinfo_' + data.data.matchId
+              const lockKey = 'matchinfo_' + data.matchId
               const finalizedData = {}
               data.data.timestmap = data.timestamp
               finalizedData['finalize_' + data.data.side] = data.data
               const res = await UpdateMatch(finalizedData, lockKey) // use room as a key to lock
+              socket.to(room).emit("matchupdate", data)
+            }
+
+            if (data.type === 'newnote') {
+              fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
+              const lockKey = 'matchinfo_' + data.matchId
+              const res = await AddMatchNote(data, lockKey)
               socket.to(room).emit("matchupdate", data)
             }
 
@@ -258,6 +260,9 @@ fastify.ready().then(() => {
             if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
               parsed.history = await FormatHistory(parsed.history)
             }
+            if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+              parsed.notes = await FormatNotes(parsed.notes)
+            }
             cb(parsed)
           } else {
             cb(null)
@@ -282,6 +287,59 @@ fastify.ready().then(() => {
     })
   })
 })
+
+async function AddMatchNote(data, lockKey) {
+  try {
+    await lock.acquire(lockKey, async () => {
+      const redisKey = lockKey
+      const rawCachedMatchInfo = await CacheGet(redisKey)
+      if (typeof rawCachedMatchInfo !== 'undefined' && rawCachedMatchInfo) {
+        const cachedMatchInfo = JSON.parse(rawCachedMatchInfo)
+        if (typeof cachedMatchInfo.notes === 'undefined') {
+          cachedMatchInfo.notes = []
+        }
+        cachedMatchInfo.notes.push({
+          timestamp: data.timestamp,
+          playerId: data.playerId,
+          note: data.data.note,
+        })
+        await CacheSet(lockKey, JSON.stringify(cachedMatchInfo))
+      } else {
+        const matchInfo = {}
+        matchInfo.notes = []
+        matchInfo.notes.push({
+          timestamp: data.timestamp,
+          playerId: data.playerId,
+          note: data.data.note,
+        })
+        await CacheSet(lockKey, JSON.stringify(matchInfo))
+      }
+    })
+  } catch (e) {
+    console.log(e)
+  }
+}
+
+async function FormatNotes(notes) {
+  try {
+    const formattedNotes = await Promise.all(notes.map(async _note => {
+      let player = null
+      if (typeof _note.playerId !== 'undefined' && _note.playerId) {
+        player = await GetPlayer(_note.playerId)
+      }
+      const playerNickname = player ? player[0].nickname : 'Player'
+      return {
+        timestamp: _note.timestamp,
+        author: playerNickname,
+        note: _note.note,
+      }
+    }))
+    return formattedNotes
+  } catch (e) {
+    console.log(e)
+    return []
+  }
+}
 
 async function FormatHistory(history) {
   try {

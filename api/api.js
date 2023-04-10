@@ -174,7 +174,7 @@ fastify.ready().then(() => {
               data.data.type = data.type
               const res = await UpdateFrame(data.data, room) // use room as a key to lock
               await Unfinalize(data.matchId)
-              socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.frameIdx, winnerTeamId: data.winnerTeamId})
+              socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.data.frameIdx, winnerTeamId: data.data.winnerTeamId})
             }
 
             if (data.type === 'players') {
@@ -182,15 +182,15 @@ fastify.ready().then(() => {
               data.data.type = data.type
               await Unfinalize(data.matchId)
               const res = await UpdateFrame(data.data, room)
-              socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.frameIdx, playerIdx: data.playerIdx, side: data.side, playerId: data.playerId, newPlayer: data.newPlayer})
+              socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.data.frameIdx, playerIdx: data.data.playerIdx, side: data.data.side, playerId: data.data.playerId, newPlayer: data.data.newPlayer})
             }
 
             if (data.type === 'firstbreak') {
               fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
               const lockKey = 'matchinfo_' + data.matchId
               await Unfinalize(data.matchId)
-              const res = await UpdateMatch(data.data, lockKey) // use room as a key to lock
-              socket.to(room).emit("matchupdate", data)
+              const res = await UpdateMatch(data.data, lockKey)
+              socket.to(room).emit('match_update', data)
             }
 
             if (data.type === 'finalize') {
@@ -199,7 +199,7 @@ fastify.ready().then(() => {
               const finalizedData = {}
               data.data.timestmap = data.timestamp
               finalizedData['finalize_' + data.data.side] = data.data
-              const res = await UpdateMatch(finalizedData, lockKey) // use room as a key to lock
+              const res = await UpdateMatch(finalizedData, lockKey)
               socket.to(room).emit("matchupdate", data)
             }
 

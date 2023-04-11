@@ -297,19 +297,21 @@ fastify.ready().then(() => {
 async function GetMatchInfo(matchId) {
   try {
     const key = 'matchinfo_' + matchId
-    const res = await CacheGet(key)
-    if (res) {
-      const parsed = JSON.parse(res)
-      if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
-        parsed.history = await FormatHistory(parsed.history)
+    let matchInfo = null
+    await lock.acquire(key, async () => {
+      const res = await CacheGet(key)
+      if (res) {
+        const parsed = JSON.parse(res)
+        if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
+          parsed.history = await FormatHistory(parsed.history)
+        }
+        if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+          parsed.notes = await FormatNotes(parsed.notes)
+        }
+        matchInfo = parsed
       }
-      if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
-        parsed.notes = await FormatNotes(parsed.notes)
-      }
-      return parsed
-    } else {
-      return null
-    }
+    })
+    return matchInfo
   } catch (e) {
     console.log(e)
     throw new Error(e)

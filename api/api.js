@@ -134,6 +134,26 @@ fastify.post('/player', async (req, reply) => {
   }
 })
 
+fastify.get('/frames/:matchId', async (req, reply) => {
+  try {
+    const res = await GetFrames(req.params.matchId)
+    return {status: 'ok', data: res}
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'err', msg: 'Server error'})
+  }
+})
+
+fastify.get('/match/:matchId', async (req, reply) => {
+  try {
+    const res = await GetMatchInfo(req.params.matchId)
+    return {status: 'ok', data: res}
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'err', msg: 'Server error'})
+  }
+})
+
 ;(async () => {
   try {
     /*
@@ -253,23 +273,10 @@ fastify.ready().then(() => {
       fastify.log.info('socket ' + socket.id + ' - getmatchinfo: ' + JSON.stringify(data))
       ;(async () => {
         try {
-          const key = 'matchinfo_' + data.matchId
-          const res = await CacheGet(key)
-          if (res) {
-            const parsed = JSON.parse(res)
-            if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
-              parsed.history = await FormatHistory(parsed.history)
-            }
-            if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
-              parsed.notes = await FormatNotes(parsed.notes)
-            }
-            cb(parsed)
-          } else {
-            cb(null)
-          }
+          const res = await GetMatchInfo(data.matchId)
+          cb(res)
         } catch (e) {
-          console.log(e)
-          cb({status: 'err', msg: 'no match info'})
+          cb({})
         }
       })()
     })
@@ -277,16 +284,52 @@ fastify.ready().then(() => {
     socket.on('getframes', (data, cb) => {
       ;(async () => {
         try {
-          const key = 'match_' + data.matchId
-          const res = await CacheGet(key)
-          cb(JSON.parse(res))
+          const res = await GetFrames(data.matchId)
+          cb(res)
         } catch (e) {
-          console.log(e)
+          cb([])
         }
       })()
     })
   })
 })
+
+async function GetMatchInfo(matchId) {
+  try {
+    const key = 'matchinfo_' + matchId
+    const res = await CacheGet(key)
+    if (res) {
+      const parsed = JSON.parse(res)
+      if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
+        parsed.history = await FormatHistory(parsed.history)
+      }
+      if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+        parsed.notes = await FormatNotes(parsed.notes)
+      }
+      return parsed
+    } else {
+      return null
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetFrames(matchId) {
+  try {
+    const key = 'match_' + matchId
+    const res = await CacheGet(key)
+    if (res) {
+      return JSON.parse(res)
+    } else {
+      return {}
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
 
 async function AddMatchNote(data, lockKey) {
   try {
@@ -391,7 +434,7 @@ async function Unfinalize(matchId) {
 
 async function SaveMatchUpdateHistory(data) {
   try {
-    const matchId = data.data.matchId
+    const matchId = data.data?.matchId ?? data.matchId
     const lockKey = 'matchinfo_' + matchId
     await lock.acquire(lockKey, async () => {
       const cacheKey = 'matchinfo_' + matchId

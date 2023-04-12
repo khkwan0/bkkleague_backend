@@ -188,6 +188,7 @@ fastify.ready().then(() => {
         if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
           if (typeof data.matchId !== 'undefined' && data.matchId) {
             const room = 'match_' + data.matchId
+            let recordHistory = true
 
             if (data.type === 'win') {
               fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
@@ -220,19 +221,31 @@ fastify.ready().then(() => {
               data.data.timestmap = data.timestamp
               finalizedData['finalize_' + data.data.side] = data.data
               const res = await UpdateMatch(finalizedData, lockKey)
-              socket.to(room).emit("matchupdate", data)
+              socket.to(room).emit("match_update", data)
             }
 
             if (data.type === 'newnote') {
               fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
               const lockKey = 'matchinfo_' + data.matchId
               const res = await AddMatchNote(data, lockKey)
-              socket.to(room).emit("matchupdate", data)
+              if (typeof data.data !== 'undefined' && typeof data.data.note !== 'undefined') {
+                data.note = data.data.note
+              } else {
+                data.note = ''
+              }
+              const formattedNote = await FormatNote(data)
+              formattedNote.type = 'newnote'
+              fastify.io.to(room).emit("match_update2", formattedNote)
+              fastify.io.to(room).emit("match_update", formattedNote)
+              recordHistory = false
             }
 
-            const history = await SaveMatchUpdateHistory(data)
-            const formattedHistory = await FormatHistory(history)
-            fastify.io.to(room).emit('historyupdate', formattedHistory)
+            if (recordHistory) {
+              const history = await SaveMatchUpdateHistory(data)
+              const formattedHistory = await FormatHistory(history)
+              fastify.io.to(room).emit('historyupdate', formattedHistory)
+              fastify.io.to(room).emit('historyupdate2', formattedHistory)
+            }
           }
         }
       } catch (e) {
@@ -370,16 +383,7 @@ async function AddMatchNote(data, lockKey) {
 async function FormatNotes(notes) {
   try {
     const formattedNotes = await Promise.all(notes.map(async _note => {
-      let player = null
-      if (typeof _note.playerId !== 'undefined' && _note.playerId) {
-        player = await GetPlayer(_note.playerId)
-      }
-      const playerNickname = player ? player[0].nickname : 'Player'
-      return {
-        timestamp: _note.timestamp,
-        author: playerNickname,
-        note: _note.note,
-      }
+      return await FormatNote(_note)
     }))
     return formattedNotes
   } catch (e) {
@@ -387,6 +391,20 @@ async function FormatNotes(notes) {
     return []
   }
 }
+
+async function FormatNote(_note) {
+  let player = null
+  if (typeof _note.playerId !== 'undefined' && _note.playerId) {
+    player = await GetPlayer(_note.playerId)
+  }
+  const playerNickname = player ? player[0].nickname : 'Player'
+  return {
+    timestamp: _note.timestamp,
+    author: playerNickname,
+    note: _note.note,
+  }
+}
+
 
 async function FormatHistories(history) {
   try {

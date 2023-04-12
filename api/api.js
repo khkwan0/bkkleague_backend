@@ -230,7 +230,9 @@ fastify.ready().then(() => {
               socket.to(room).emit("matchupdate", data)
             }
 
-            await SaveMatchUpdateHistory(data)
+            const history = await SaveMatchUpdateHistory(data)
+            const formattedHistory = await FormatHistory(history)
+            fastify.io.to(room).emit('historyupdate', formattedHistory)
           }
         }
       } catch (e) {
@@ -303,7 +305,7 @@ async function GetMatchInfo(matchId) {
       if (res) {
         const parsed = JSON.parse(res)
         if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
-          parsed.history = await FormatHistory(parsed.history)
+          parsed.history = await FormatHistories(parsed.history)
         }
         if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
           parsed.notes = await FormatNotes(parsed.notes)
@@ -386,39 +388,47 @@ async function FormatNotes(notes) {
   }
 }
 
-async function FormatHistory(history) {
+async function FormatHistories(history) {
   try {
     const formattedHistory = await Promise.all(history.map(async _hist => {
-      const player = await GetPlayer(_hist.playerId)
-      const playerNickname = player ? player[0].nickname : 'Player'
-      const type = _hist.data.type
-      const data = _hist.data.data
-      const toReturn = {
-        timestamp: _hist.timestamp,
-        msg: [],
-      }
-      if (type === 'win') {
-        toReturn.msg.push(`${playerNickname} set WIN frame: ${data.frameNumber}`)
-        return toReturn
-      }
-      if (type === 'players') {
-        const framePlayer = await GetPlayer(data.playerId)
-        const framePlayerNickname = framePlayer ? framePlayer[0].nickname : 'player'
-        toReturn.msg.push(`${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`)
-        return toReturn
-      }
-      if (type === 'firstbreak') {
-        const team = await GetTeam(data.firstBreak)
-        const teamShortName = team ? team[0].short_name : 'team'
-        toReturn.msg.push(`${playerNickname} set first break: ${teamShortName}`)
-        return toReturn
-      }
-      if (type === 'finalize') {
-        toReturn.msg.push(`${playerNickname} signed the results.`)
-        return toReturn
-      }
+      return await FormatHistory(_hist)
     }))
-    return (formattedHistory)
+    return formattedHistory
+  } catch (e) {
+    console.log(e)
+  }
+}
+
+async function FormatHistory(_hist) {
+  try {
+    const player = await GetPlayer(_hist.playerId)
+    const playerNickname = player ? player[0].nickname : 'Player'
+    const type = _hist.data.type
+    const data = _hist.data.data
+    const toReturn = {
+      timestamp: _hist.timestamp,
+      msg: [],
+    }
+    if (type === 'win') {
+      toReturn.msg.push(`${playerNickname} set WIN frame: ${data.frameNumber}`)
+      return toReturn
+    }
+    if (type === 'players') {
+      const framePlayer = await GetPlayer(data.playerId)
+      const framePlayerNickname = framePlayer ? framePlayer[0].nickname : 'player'
+      toReturn.msg.push(`${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`)
+      return toReturn
+    }
+    if (type === 'firstbreak') {
+      const team = await GetTeam(data.firstBreak)
+      const teamShortName = team ? team[0].short_name : 'team'
+      toReturn.msg.push(`${playerNickname} set first break: ${teamShortName}`)
+      return toReturn
+    }
+    if (type === 'finalize') {
+      toReturn.msg.push(`${playerNickname} signed the results.`)
+      return toReturn
+    }
   } catch (e) {
     console.log(e)
     reject(e)
@@ -438,6 +448,7 @@ async function SaveMatchUpdateHistory(data) {
   try {
     const matchId = data.data?.matchId ?? data.matchId
     const lockKey = 'matchinfo_' + matchId
+    let toSave = {}
     await lock.acquire(lockKey, async () => {
       const cacheKey = 'matchinfo_' + matchId
       const cachedRawMatchInfo =  await CacheGet(cacheKey)
@@ -448,7 +459,7 @@ async function SaveMatchUpdateHistory(data) {
       if (typeof matchInfo.history === 'undefined') {
         matchInfo.history = []
       }
-      const toSave = {
+      toSave = {
         playerId: data.playerId,
         timestamp: Date.now(),
         data: data
@@ -456,6 +467,7 @@ async function SaveMatchUpdateHistory(data) {
       matchInfo.history.push(toSave)
       await CacheSet(cacheKey, JSON.stringify(matchInfo))
     })
+    return {...toSave}
   } catch (e) {
     console.log(e)
   }

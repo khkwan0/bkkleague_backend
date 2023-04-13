@@ -6,6 +6,7 @@ import * as mysql from 'mysql2'
 import phpUnserialize from 'phpunserialize'
 import AsyncLock from 'async-lock'
 import {createClient} from 'redis'
+import crypto from 'crypto'
 
 dotenv.config()
 /*
@@ -322,6 +323,17 @@ fastify.ready().then(() => {
     })
   })
 })
+
+function GenerateToken() {
+  return new Promise((resolve, reject) => {
+    crypto.randomByes(48, (err, buffer) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(buffer.toString('hex'))
+    })
+  })
+}
 
 async function HandleLogin(email = '', password = '') {
   try {

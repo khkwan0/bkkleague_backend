@@ -69,6 +69,20 @@ fastify.get('/', async (req, reply) => {
   reply.code(403).send()
 })
 
+fastify.post('/login', async (req, reply) => {
+  if (typeof req.body.email && type of req.body.password) {
+    const {email, password} = req.body
+    const res = await HandleLogin(email, password) 
+    if (res) {
+      return res
+    } else {
+      reply.code(401).send()
+    }
+  } else {
+    reply.code(401).send()
+  }
+})
+
 fastify.get('/season', (req, reply) => {
   return {season: 9}
 })
@@ -308,6 +322,20 @@ fastify.ready().then(() => {
     })
   })
 })
+
+async function HandleLogin(email = '', password = '') {
+  try {
+    const user = await GetUserByEmail(email)
+    const hash = ComputerPasswordHash(password)
+    if (hash === user.hash) {
+      return user
+    } else {
+      return null
+    }
+  } catch (e) {
+    return null
+  }
+}
 
 async function GetMatchInfo(matchId) {
   try {
@@ -729,6 +757,21 @@ async function GetPlayersByTeamId(teamId) {
   } catch (e) {
     console.log(e)
     return []
+  }
+}
+
+async function GetPlayerByEmail(email) {
+  try {
+    const query = `
+      SELECT *
+      FROM users
+      WHERE email=?
+    `
+    const params = [email]
+    const res = await DoQuery(query, params)
+    return res
+  } catch (e) {
+    throw new Error(e)
   }
 }
 

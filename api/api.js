@@ -730,21 +730,105 @@ async function FinalizeMatch(matchId) {
 
         // transform for fast lookups
         const transformedFrameTypes = {}
-        frames.types.forEach(frameType => {
+        frameTypes.forEach(frameType => {
           transformedFrameTypes[frameType.short_name] = frameType
         })
 
-        // save each frame in frames table
 
+        // another pull for fast lookups
+        const teams = await GetTeamsByMatchId(matchId)
+
+        if (teams && typeof teams[0] !== 'undefined') {
+          // save each frame in frames table
+          let i = 0
+          while (i < frames.length) {
+            const toSave = {
+              match_id: matchId,
+              frame_number: frames[i].frameNumber - 1,
+              frame_type_id: transformedFrameTypes[frames[i].frameType].id,
+              home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0
+            }
+            const res = await SaveFrame(toSave)
+            const frameId = res.insertId
+
+            // save all players in home team in players_frames table
+            let j = 0
+            while (j < frames[i].home_player_ids.length) {
+              const toSavePlayersFrames = {
+                frame_id: frameId,
+                player_id: frames[i].home_player_ids[j],
+                home: 1,
+              }
+              await SavePlayersFrames(toSavePlayersFrames)
+              j++
+            }
+
+            // do the same for away team
+            j = 0
+            while (j < frames[i].away_player_ids.length) {
+              const toSavePlayersFrames = {
+                frame_id: frameId,
+                player_id: frames[i].away_player_ids[j],
+                home: 0,
+              }
+              await SavePlayersFrames(toSavePlayersFrames)
+              j++
+            }
+
+          } 
+        } else {
+          return false
+        }
       } else {
         return false
       }
+      // finally save in matches table...
     } else {
       return false
     }
   } catch (e) {
     console.log(e)
     return false
+  }
+}
+
+async function SaveFrame(frame) {
+  try {
+    let query = `
+      INSERT INTO frames (match_id, frame_number, frame_type_id, home_win)
+      VALUES (?, ?, ?, ?)
+    `
+    const params = Object.keys(frame).map(key => frame[key])
+    const res = await DoQuery(query, params)
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
+async function SavePlayersFrames(frame) {
+  try {
+    let query = `
+      INSERT INTO players_frames (frame_id, player_id, home_team)
+      VALUES (?, ?, ?)
+    `
+    const params = Object.keys(frame).map(key => frame[key])
+    const res = await DoQuery(query, params)
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
+async function GetTeamsByMatchId(matchId) {
+  try {
+    let query = `
+      SELECT home_team_id, away_team_id
+      FROM matches
+      WHERE id=?
+    `
+    const res = await DoQuery(query, [matchId])
+    return res
+  } catch (e) {
+    throw new Error(e)
   }
 }
 

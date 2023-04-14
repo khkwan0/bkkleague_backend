@@ -202,65 +202,72 @@ fastify.ready().then(() => {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
         if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
           if (typeof data.matchId !== 'undefined' && data.matchId) {
-            const room = 'match_' + data.matchId
-            let recordHistory = true
+            await lock.acquire('matchinfo' + data.matchId, async () => {
+              const room = 'match_' + data.matchId
+              let recordHistory = true
 
-            if (data.type === 'win') {
-              fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
-              data.data.type = data.type
-              const res = await UpdateFrame(data.data, room) // use room as a key to lock
-              await Unfinalize(data.matchId)
-              socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.data.frameIdx, winnerTeamId: data.data.winnerTeamId})
-            }
-
-            if (data.type === 'players') {
-              fastify.log.info(room + ' - frame_update_players: ' + JSON.stringify(data))
-              data.data.type = data.type
-              await Unfinalize(data.matchId)
-              const res = await UpdateFrame(data.data, room)
-              socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.data.frameIdx, playerIdx: data.data.playerIdx, side: data.data.side, playerId: data.data.playerId, newPlayer: data.data.newPlayer})
-            }
-
-            if (data.type === 'firstbreak') {
-              fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
-              const lockKey = 'matchinfo_' + data.matchId
-              await Unfinalize(data.matchId)
-              const res = await UpdateMatch(data.data, lockKey)
-              socket.to(room).emit('match_update', data)
-            }
-
-            if (data.type === 'finalize') {
-              fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
-              const lockKey = 'matchinfo_' + data.matchId
-              const finalizedData = {}
-              data.data.timestmap = data.timestamp
-              finalizedData['finalize_' + data.data.side] = data.data
-              const res = await UpdateMatch(finalizedData, lockKey)
-              socket.to(room).emit("match_update", data)
-            }
-
-            if (data.type === 'newnote') {
-              fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
-              const lockKey = 'matchinfo_' + data.matchId
-              const res = await AddMatchNote(data, lockKey)
-              if (typeof data.data !== 'undefined' && typeof data.data.note !== 'undefined') {
-                data.note = data.data.note
-              } else {
-                data.note = ''
+              if (data.type === 'win') {
+                fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
+                data.data.type = data.type
+                const res = await UpdateFrame(data.data, room) // use room as a key to lock
+                await Unfinalize(data.matchId)
+                socket.to(room).emit("frame_update", {type: 'win', frameIdx: data.data.frameIdx, winnerTeamId: data.data.winnerTeamId})
               }
-              const formattedNote = await FormatNote(data)
-              formattedNote.type = 'newnote'
-              fastify.io.to(room).emit("match_update2", formattedNote)
-              fastify.io.to(room).emit("match_update", formattedNote)
-              recordHistory = false
-            }
 
-            if (recordHistory) {
-              const history = await SaveMatchUpdateHistory(data)
-              const formattedHistory = await FormatHistory(history)
-              fastify.io.to(room).emit('historyupdate', formattedHistory)
-              fastify.io.to(room).emit('historyupdate2', formattedHistory)
-            }
+              if (data.type === 'players') {
+                fastify.log.info(room + ' - frame_update_players: ' + JSON.stringify(data))
+                data.data.type = data.type
+                await Unfinalize(data.matchId)
+                const res = await UpdateFrame(data.data, room)
+                socket.to(room).emit("frame_update", {type: 'players', frameIdx: data.data.frameIdx, playerIdx: data.data.playerIdx, side: data.data.side, playerId: data.data.playerId, newPlayer: data.data.newPlayer})
+              }
+
+              if (data.type === 'firstbreak') {
+                fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
+                const lockKey = 'matchinfo_' + data.matchId
+                await Unfinalize(data.matchId)
+                const res = await UpdateMatch(data.data, lockKey)
+                socket.to(room).emit('match_update', data)
+              }
+
+              if (data.type === 'finalize') {
+                fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
+                const lockKey = 'matchinfo_' + data.matchId
+                const finalizedData = {}
+                data.data.timestmap = data.timestamp
+                finalizedData['finalize_' + data.data.side] = data.data
+                const res = await UpdateMatch(finalizedData, lockKey)
+                const matchInfo = await GetMatchInfo(data.matchId)
+                const {finalize_home, finalize_away} = matchInfo
+                if (finalze_home && finalize_away) {
+                  FinalizeMatch(matchId)
+                }
+                socket.to(room).emit("match_update", data)
+              }
+
+              if (data.type === 'newnote') {
+                fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
+                const lockKey = 'matchinfo_' + data.matchId
+                const res = await AddMatchNote(data, lockKey)
+                if (typeof data.data !== 'undefined' && typeof data.data.note !== 'undefined') {
+                  data.note = data.data.note
+                } else {
+                  data.note = ''
+                }
+                const formattedNote = await FormatNote(data)
+                formattedNote.type = 'newnote'
+                fastify.io.to(room).emit("match_update2", formattedNote)
+                fastify.io.to(room).emit("match_update", formattedNote)
+                recordHistory = false
+              }
+
+              if (recordHistory) {
+                const history = await SaveMatchUpdateHistory(data)
+                const formattedHistory = await FormatHistory(history)
+                fastify.io.to(room).emit('historyupdate', formattedHistory)
+                fastify.io.to(room).emit('historyupdate2', formattedHistory)
+              }
+            })
           }
         }
       } catch (e) {
@@ -615,19 +622,23 @@ async function UpdateFrame(data, lockKey) {
         // handle win situation
         if (data.type === 'win') {
 
-          // if updatable...
+          // if updateable...
           if (found) {
             cachedFrameInfo.frames[i].winner = data.winnerTeamId
             cachedFrameInfo.frames[i].winningPlayers = data.playerIds
           } else {
 
             // otherwise, add the frame data
+            // note: this _shouldn't_ happen if front end enforces
+            // players to be filled out before a "win" can be marked
             cachedFrameInfo.frames.push({
               frameIdx: data.frameIdx,
               winner: data.winnerTeamId,
               winningPlayers: data.playerIds,
               homePlayerIds: [],
               awayPlayerIds: [],
+              frameType: data.frameType,
+              frameNumber: data.frameNumber,
             })
           }
         } else if (data.type === 'players') {
@@ -644,6 +655,8 @@ async function UpdateFrame(data, lockKey) {
               winningPlayers: [],
               homePlayerIds: [],
               awayPlayerIds: [],
+              frameType: data.frameType,
+              frameNumber: data.frameNumber,
             }
             if (data.side === 'home') {
               newFrame.homePlayerIds[data.playerIdx] = data.playerId
@@ -658,12 +671,16 @@ async function UpdateFrame(data, lockKey) {
         const serializedMatchInfo = JSON.stringify(cachedFrameInfo)
         CacheSet(key, serializedMatchInfo)
       } else {
-
         // completely new match, not in redis yet
         const frameInfo = {
           matchId: data.matchId,
           frames: []
         }
+        // this should never happen
+        // since the frame should already exist
+        // because players must be filled out
+        // before a win can be marked.
+        // enforced by the frontend.
         if (data.type === 'win') {
           frameInfo.frames.push({
             frameIdx: data.frameIdx,
@@ -671,14 +688,19 @@ async function UpdateFrame(data, lockKey) {
             winningPlayers: data.playerIds, 
             homePlayerIds: [],
             awayPlayerIds: [],
+            frameType: data.frameType,
+            frameNumber: data.frameNumber,
           })
         } else if (data.type === 'players') {
+          console.log(data)
           const newFrame = {
             frameIdx: data.frameIdx,
             winner: 0,
             winningPlayers: [],
             homePlayerIds: [],
             awayPlayerIds: [],
+            frameType: data.frameType,
+            frameNumber: data.frameNumber,
           }
           if (data.side === 'home') {
             newFrame.homePlayerIds[data.playerIdx] = data.playerId
@@ -693,6 +715,36 @@ async function UpdateFrame(data, lockKey) {
     })
   } catch (e) {
     console.log(e)
+  }
+}
+
+async function FinalizeMatch(matchId) {
+  try {
+    const framesCacheKey = 'match_' + matchId
+    const rawCachedFrames = await CacheGet(framesCacheKey)
+    if (rawCachedFrames) {
+      const cachedFrames = JSON.parse(CachedFrames)
+      const frames = cachedFrames.frames
+      if (typeof frames !== 'undefined' && Array.IsArray(frames) && frames.length > 0) {
+        const frameTypes = await GetFrameTypes()
+
+        // transform for fast lookups
+        const transformedFrameTypes = {}
+        frames.types.forEach(frameType => {
+          transformedFrameTypes[frameType.short_name] = frameType
+        })
+
+        // save each frame in frames table
+
+      } else {
+        return false
+      }
+    } else {
+      return false
+    }
+  } catch (e) {
+    console.log(e)
+    return false
   }
 }
 
@@ -718,6 +770,19 @@ async function GetPlayer(playerId) {
       WHERE id=?
     `
     const res = await DoQuery(query, [playerId])
+    return res
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
+async function GetFrameTypes() {
+  try {
+    let query = `
+      SELECT *
+      FROM frame_types
+    `
+    const res = await DoQuery(query, [])
     return res
   } catch (e) {
     throw new Error(e)

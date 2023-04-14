@@ -71,7 +71,7 @@ fastify.get('/', async (req, reply) => {
 })
 
 fastify.post('/login', async (req, reply) => {
-  if (typeof req.body.email && type of req.body.password) {
+  if (typeof req.body.email && typeof req.body.password) {
     const {email, password} = req.body
     const res = await HandleLogin(email, password) 
     if (res) {
@@ -331,6 +331,7 @@ function GenerateToken() {
         reject(err)
       } else {
         resolve(buffer.toString('hex'))
+      }
     })
   })
 }

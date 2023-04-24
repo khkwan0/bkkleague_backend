@@ -3,6 +3,7 @@ services:
     image: nginx:alpine
     volumes:
       - ./etc/nginx:/etc/nginx
+      - ./assets:/usr/share/nginx/html
     ports:
       - "8081:80"
   api:

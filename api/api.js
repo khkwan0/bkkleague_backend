@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import fastifyIO from 'fastify-socket.io'
+import fastifyJWT from '@fastify/jwt'
 // import {MongoClient} from 'mongodb'
 import * as dotenv from 'dotenv'
 import * as mysql from 'mysql2'
@@ -7,12 +8,15 @@ import phpUnserialize from 'phpunserialize'
 import AsyncLock from 'async-lock'
 import {createClient} from 'redis'
 import crypto from 'crypto'
+import bcrypt from 'bcrypt'
+console.log(fastifyJWT)
 
 dotenv.config()
 /*
 const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
 */
+
 
 const lock = new AsyncLock()
 
@@ -33,6 +37,7 @@ const redisClient = createClient({url: process.env.REDIS_HOST})
 // let db = null
 
 const fastify = Fastify({ logger: true})
+fastify.register(fastifyJWT, {secret: 'kenkwan'})
 
 const DoQuery = (queryString, params) => {
   return new Promise((resolve, reject) => {
@@ -64,23 +69,82 @@ async function CacheSet(key, value) {
   }
 }
 
+async function CacheDel(key) {
+  try {
+    redisClient.del(key)
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
 fastify.register(fastifyIO)
+
+/*
+fastify.decorate("authenticate", async (req, reply) => {
+  try {
+    await req.jwtVerify()
+  } catch (e) {
+    reply.send(e)
+  }
+})
+*/
 
 fastify.get('/', async (req, reply) => {
   reply.code(403).send()
 })
 
+
+// after auth, store user id into redis.
+// the key for the redis store is a random token
+// only send the token back in a jwt to the client
+// the jwt will be used to get playerId in
+// authenticated requests
 fastify.post('/login', async (req, reply) => {
   if (typeof req.body.email && typeof req.body.password) {
     const {email, password} = req.body
     const res = await HandleLogin(email, password) 
     if (res) {
-      return res
+      const token = await CreateAndSaveSecretKey(res)
+      const jwt = fastify.jwt.sign({token: token})
+      return {
+        status: 'ok',
+        data: {
+          token: jwt,
+          user: res,
+        }
+      }
     } else {
       reply.code(401).send()
     }
   } else {
     reply.code(401).send()
+  }
+})
+
+fastify.get('/logout', async (req, reply) => {
+  try {
+    await req.jwtVerify()
+    await CacheDel(req.user.token)
+  } catch (e) {
+    fastify.log.error("Invalid JWT")
+    reply.code(200).send()
+  }
+})
+
+fastify.get('/user', async (req, reply) => {
+  try {
+    await req.jwtVerify()
+    const userid = await GetPlayerIdFromToken(req.user.token)
+    if (userid) {
+      const userData = await GetPlayer(userid)
+      return userData
+    } else {
+      fastify.log("No user id found from jwt")
+      reply.code(404).send()
+    }
+  } catch (e) {
+    fastify.log.error("Invalid JWT")
+    reply.code(404).send()
   }
 })
 
@@ -102,13 +166,29 @@ fastify.get('/game/types', async (req, reply) => {
 })
 
 fastify.get('/matches', async (req, reply) => {
+  let userid = null
+  let verifiedJWT = false
   try {
-    const {userid, newonly} = req.query
+    await req.jwtVerify()
+    verifiedJWT = true
+  } catch (e) {
+    fastify.log.info('Invalid JWT')
+  }
+
+  try {
+    const {newonly} = req.query
+    if (verifiedJWT) {
+      console.log('jwt user', req.user)
+    }
+    userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = await GetMatches(userid, newonly)
 
     // format for season 9 is in php serialized form, convert to json
     const _res = res.map(match => {
       match.format = JSON.stringify(phpUnserialize(match.format))
+      if (typeof match.logo !== 'undefined' && match.logo) {
+        match.logo = 'https://api.bkkleague.com/logos/' + match.logo
+      }
       return match
     })
     return _res
@@ -240,8 +320,8 @@ fastify.ready().then(() => {
                   const res = await UpdateMatch(finalizedData, lockKey)
                   const matchInfo = await GetMatchInfo(data.matchId)
                   const {finalize_home, finalize_away} = matchInfo
-                  if (finalze_home && finalize_away) {
-                    FinalizeMatch(matchId)
+                  if (finalize_home && finalize_away) {
+                    FinalizeMatch(data.matchId)
                   }
                   socket.to(room).emit("match_update", data)
                 }
@@ -321,13 +401,20 @@ function GenerateToken() {
 async function HandleLogin(email = '', password = '') {
   try {
     const user = await GetUserByEmail(email)
-    const hash = ComputerPasswordHash(password)
-    if (hash === user.hash) {
-      return user
+    const passwordHash = user.password_hash
+
+    // for old bcrypt algorithms backward compatibility
+    const newHash = passwordHash.match(/^\$2y/) ? passwordHash.replace("$2y", "$2a") : passwordHash
+    
+    const pass = await bcrypt.compare(password, newHash)
+    if (pass) {
+      const player = await GetPlayer(user.player_id)
+      return player
     } else {
       return null
     }
   } catch (e) {
+    console.log(e)
     return null
   }
 }
@@ -420,7 +507,7 @@ async function FormatNote(_note) {
   if (typeof _note.playerId !== 'undefined' && _note.playerId) {
     player = await GetPlayer(_note.playerId)
   }
-  const playerNickname = player ? player[0].nickname : 'Player'
+  const playerNickname = player ? player.nickname : 'Player'
   return {
     timestamp: _note.timestamp,
     author: playerNickname,
@@ -443,7 +530,7 @@ async function FormatHistories(history) {
 async function FormatHistory(_hist) {
   try {
     const player = await GetPlayer(_hist.playerId)
-    const playerNickname = player ? player[0].nickname : 'Player'
+    const playerNickname = player ? player.nickname : 'Player'
     const type = _hist.data.type
     const data = _hist.data.data
     const toReturn = {
@@ -456,7 +543,7 @@ async function FormatHistory(_hist) {
     }
     if (type === 'players') {
       const framePlayer = await GetPlayer(data.playerId)
-      const framePlayerNickname = framePlayer ? framePlayer[0].nickname : 'player'
+      const framePlayerNickname = framePlayer ? framePlayer.nickname : 'player'
       toReturn.msg.push(`${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`)
       return toReturn
     }
@@ -702,9 +789,9 @@ async function FinalizeMatch(matchId) {
     const matchInfoCacheKey = 'matchinfo_' + matchId
     const rawMatchInfo = await CacheGet(matchInfoCacheKey)
     if (rawCachedFrames && rawMatchInfo) {
-      const cachedFrames = JSON.parse(CachedFrames)
+      const cachedFrames = JSON.parse(rawCachedFrames)
       const frames = cachedFrames.frames
-      if (typeof frames !== 'undefined' && Array.IsArray(frames) && frames.length > 0) {
+      if (typeof frames !== 'undefined' && Array.isArray(frames) && frames.length > 0) {
         const frameTypes = await GetFrameTypes()
 
         // transform for fast lookups
@@ -721,6 +808,7 @@ async function FinalizeMatch(matchId) {
           // save each frame in frames table
           let i = 0
           while (i < frames.length) {
+            console.log(frames[i])
             const toSave = {
               match_id: matchId,
               frame_number: frames[i].frameNumber - 1,
@@ -728,14 +816,14 @@ async function FinalizeMatch(matchId) {
               home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0
             }
             const res = await SaveFrame(toSave)
-            const frameId = res.insertId
+            const frameId = res?.insertId ?? 1
 
             // save all players in home team in players_frames table
             let j = 0
-            while (j < frames[i].home_player_ids.length) {
+            while (j < frames[i].homePlayerIds.length) {
               const toSavePlayersFrames = {
                 frame_id: frameId,
-                player_id: frames[i].home_player_ids[j],
+                player_id: frames[i].homePlayerIds[j],
                 home: 1,
               }
               await SavePlayersFrames(toSavePlayersFrames)
@@ -744,15 +832,16 @@ async function FinalizeMatch(matchId) {
 
             // do the same for away team
             j = 0
-            while (j < frames[i].away_player_ids.length) {
+            while (j < frames[i].awayPlayerIds.length) {
               const toSavePlayersFrames = {
                 frame_id: frameId,
-                player_id: frames[i].away_player_ids[j],
+                player_id: frames[i].awayPlayerIds[j],
                 home: 0,
               }
               await SavePlayersFrames(toSavePlayersFrames)
               j++
             }
+            i++
           } 
         } else {
           return false
@@ -767,7 +856,7 @@ async function FinalizeMatch(matchId) {
       let away_frames = 0
       frames.forEach(frame => {
         if (frame.type !== 'section') {
-          if (winner === matchInfo.home_team_id) {
+          if (frame.winner === matchInfo.home_team_id) {
             home_frames++
           } else {
             away_frames++
@@ -820,6 +909,62 @@ async function FinalizeMatch(matchId) {
   }
 }
 
+async function CreateAndSaveSecretKey(player) {
+  const token = 'token:' + await GetRandomBytes()
+  const toSave = {
+    playerId: player.id,
+    timestamp: Date.now()
+  }
+  await CacheSet(token, JSON.stringify(toSave))
+  return token
+}
+
+function GetRandomBytes(numBytes = 48) {
+  return new Promise((resolve, reject) => {
+    try {
+      crypto.randomBytes(numBytes, (err, buff) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve(buff.toString('hex'))
+        }
+      })
+    } catch (e) {
+      reject(e)
+    }
+  })
+}
+
+async function GetPlayerIdFromToken(token) {
+  try {
+    const res = await CacheGet(token)
+    if (res) {
+      const json = JSON.parse(res)
+      return json.playerId ?? null
+    } else {
+      return null
+    }
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
+
+async function GetUserByEmail(email) {
+  try {
+    let query = `
+      SELECT *
+      FROM pw
+      WHERE email=?
+    `
+    const params = [email]
+    const res = await DoQuery(query, params)
+    return res[0]
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
 async function InsertFinalizedMatch(matchId, matchData) {
   try {
     let query = `
@@ -837,7 +982,7 @@ async function InsertFinalizedMatch(matchId, matchData) {
   }
 }
 
-async function UpdateFinzaliedMatch(matchId, toSave) {
+async function UpdateFinalizedMatch(matchId, toSave) {
   try {
     let toSet = ''
     Object.keys(toSave).forEach(key => {
@@ -867,6 +1012,7 @@ async function SaveFrame(frame) {
       VALUES (?, ?, ?, ?)
     `
     const params = Object.keys(frame).map(key => frame[key])
+    console.log(query, params)
     /*
     const res = await DoQuery(query, params)
     return res
@@ -905,6 +1051,21 @@ async function GetTeamsByMatchId(matchId) {
   }
 }
 
+async function GetTeamsByPlayerId(playerId) {
+  try {
+    let query = `
+      SELECT team_id 
+      FROM players_teams
+      WHERE player_id=?
+    `
+    const res = await DoQuery(query, [playerId])
+    const teams = res.map(players_team => players_team.team_id)
+    return teams
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
 async function GetTeam(teamId) {
   try {
     let query = `
@@ -927,7 +1088,7 @@ async function GetPlayer(playerId) {
       WHERE id=?
     `
     const res = await DoQuery(query, [playerId])
-    return res
+    return res[0]
   } catch (e) {
     throw new Error(e)
   }
@@ -1004,7 +1165,7 @@ async function GetPlayerByEmail(email) {
     `
     const params = [email]
     const res = await DoQuery(query, params)
-    return res
+    return res[0]
   } catch (e) {
     throw new Error(e)
   }
@@ -1016,7 +1177,7 @@ async function GetMatches(userid, newonly) {
     const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     let query = ''
     let params = []
-    if (typeof userid !== 'undefined') {
+    if (typeof userid !== 'undefined' && userid) {
       params.push(parseInt(userid))
       if (typeof newonly !== 'undefined') {
         query = `
@@ -1047,7 +1208,7 @@ async function GetMatches(userid, newonly) {
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.id as match_id, m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
+              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.home_team_id=teams.id
@@ -1064,17 +1225,29 @@ async function GetMatches(userid, newonly) {
         `
       }
     } else if (typeof newonly !== 'undefined') {
+      /*
+      console.log('newonly, no uid')
+      query = `
+        SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+        FROM matches m, divisions d, venues v, teams
+        WHERE m.date >= ?
+          AND m.home_team_id=teams.id
+          AND teams.venue_id=v.id
+          AND m.division_id=d.id
+      `
+      const res = await DoQuery(query, [today])
+      return res
+      */
       query = `
         SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
-            FROM matches m, players_teams pt, divisions d, venues v, teams
+            SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+            FROM matches m, divisions d, venues v, teams
             WHERE m.date>=?
               AND m.home_team_id=teams.id
               AND teams.venue_id=v.id
-              AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
               AND m.division_id=d.id
           ) AS x
           LEFT JOIN teams t
@@ -1084,18 +1257,17 @@ async function GetMatches(userid, newonly) {
           ON y.away_team_id=tt.id
         ORDER BY y.date
       `
-      params.push[today]
+      params.push(today)
     } else {
       query = `
         SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.date, d.name AS division_name, m.home_team_id, m.away_team_id, v.*
-            FROM matches m, players_teams pt, divisions d, venues v, teams
+            SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+            FROM matches m, divisions d, venues v, teams
             WHERE m.home_team_id=teams.id
               AND teams.venue_id=v.id
-              AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
               AND m.division_id=d.id
           ) AS x
           LEFT JOIN teams t

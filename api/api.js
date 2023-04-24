@@ -8,6 +8,7 @@ import phpUnserialize from 'phpunserialize'
 import AsyncLock from 'async-lock'
 import {createClient} from 'redis'
 import crypto from 'crypto'
+import {DateTime} from 'luxon'
 import bcrypt from 'bcrypt'
 console.log(fastifyJWT)
 
@@ -177,9 +178,6 @@ fastify.get('/matches', async (req, reply) => {
 
   try {
     const {newonly} = req.query
-    if (verifiedJWT) {
-      console.log('jwt user', req.user)
-    }
     userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = await GetMatches(userid, newonly)
 
@@ -192,6 +190,34 @@ fastify.get('/matches', async (req, reply) => {
       return match
     })
     return _res
+  } catch (e) {
+    console.log(e)
+    return []
+  }
+})
+
+fastify.get('/season/matches', async (req, reply) => {
+  try {
+    const season = req.query?.season ?? 9
+    const res = await GetMatchesBySeason(season)
+    const matchGroupingsByDate = {}
+    res.forEach(match => {
+      if (typeof matchGroupingsByDate[match.date] === 'undefined') {
+        matchGroupingsByDate[match.date] = []
+      }
+      matchGroupingsByDate[match.date].push(match)
+    })
+    const toSend = Object.keys(matchGroupingsByDate).map(key => {
+      const matches = matchGroupingsByDate[key].map(match => {
+        const _match = match
+        _match.section_scores = match.section_scores ? phpUnserialize(match.section_scores) : match.section_scores
+        _match.score = match.score ? phpUnserialize(match.score) : match.score
+        _match.format = match.format ? phpUnserialize(match.format) : match.format
+        return _match
+      })
+      return ({[key]: matches})
+    })
+    return toSend
   } catch (e) {
     console.log(e)
     return []
@@ -1166,6 +1192,25 @@ async function GetPlayerByEmail(email) {
     const params = [email]
     const res = await DoQuery(query, params)
     return res[0]
+  } catch (e) {
+    throw new Error(e)
+  }
+}
+
+async function GetMatchesBySeason(season) {
+  try {
+    let query = `
+      SELECT *,away.short_name as away_short_name, home.short_name as home_short_name
+      FROM matches, divisions, teams home, teams away, venues
+      WHERE matches.division_id=divisions.id
+        AND divisions.season_id=?
+        AND matches.home_team_id=home.id
+        AND matches.away_team_id=away.id
+        AND home.venue_id=venues.id
+      ORDER BY matches.date
+    `
+    const res = await DoQuery(query, [season])
+    return res
   } catch (e) {
     throw new Error(e)
   }

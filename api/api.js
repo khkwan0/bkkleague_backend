@@ -10,9 +10,10 @@ import {createClient} from 'redis'
 import crypto from 'crypto'
 import {DateTime} from 'luxon'
 import bcrypt from 'bcrypt'
-console.log(fastifyJWT)
 
 dotenv.config()
+const fastify = Fastify({ logger: true})
+fastify.register(fastifyJWT, {secret: 'kenkwan'})
 /*
 const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
@@ -31,14 +32,12 @@ const mysqlHandle = mysql.createPool({
 const redisClient = createClient({url: process.env.REDIS_HOST})
 ;(async () => {
   await redisClient.connect()
-  console.log("Redis HOST: ", process.env.REDIS_HOST)
-  console.log("Redis is: ", redisClient.isReady ? "Up": "Down")
+  fastify.log.info("Redis HOST: " +  process.env.REDIS_HOST)
+  fastify.log.info("Redis is: " + redisClient.isReady ? "Up": "Down")
 })()
 
 // let db = null
 
-const fastify = Fastify({ logger: true})
-fastify.register(fastifyJWT, {secret: 'kenkwan'})
 
 const DoQuery = (queryString, params) => {
   return new Promise((resolve, reject) => {
@@ -140,7 +139,7 @@ fastify.get('/user', async (req, reply) => {
       const userData = await GetPlayer(userid)
       return userData
     } else {
-      fastify.log("No user id found from jwt")
+      fastify.log.error("No user id found from jwt")
       reply.code(404).send()
     }
   } catch (e) {
@@ -201,13 +200,20 @@ fastify.get('/season/matches', async (req, reply) => {
     const season = req.query?.season ?? 9
     const res = await GetMatchesBySeason(season)
     const matchGroupingsByDate = {}
+    const now = DateTime.now()
     res.forEach(match => {
-      if (typeof matchGroupingsByDate[match.date] === 'undefined') {
-        matchGroupingsByDate[match.date] = []
+      const matchDate = DateTime.fromJSDate(match.date).toLocaleString(DateTime.DATE_MED)
+      if (typeof matchGroupingsByDate[matchDate] === 'undefined') {
+        matchGroupingsByDate[matchDate] = []
       }
-      matchGroupingsByDate[match.date].push(match)
+      matchGroupingsByDate[matchDate].push(match)
     })
-    const toSend = Object.keys(matchGroupingsByDate).map(key => {
+    let scrollIndex = 0
+    const toSend = Object.keys(matchGroupingsByDate).map((key, idx) => {
+      const _date = DateTime.fromJSDate(matchGroupingsByDate[key][0].date)
+      if (_date > now && scrollIndex === 0) {
+        scrollIndex = idx
+      }
       const matches = matchGroupingsByDate[key].map(match => {
         const _match = match
         _match.section_scores = match.section_scores ? phpUnserialize(match.section_scores) : match.section_scores
@@ -217,7 +223,7 @@ fastify.get('/season/matches', async (req, reply) => {
       })
       return ({[key]: matches})
     })
-    return toSend
+    return {scrollIndex: scrollIndex, matches: toSend}
   } catch (e) {
     console.log(e)
     return []

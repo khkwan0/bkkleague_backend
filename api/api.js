@@ -196,34 +196,108 @@ fastify.get('/matches', async (req, reply) => {
 })
 
 fastify.get('/season/matches', async (req, reply) => {
+
+  // we want to send back an object like this...
+  // 
+  // group all matches by date...
+  // then inside each date grouping, group the matches by division...
+  // example:
+  //
+  // matchData = [
+  //  {
+  //    "Mon Jan 1, 1999": {
+  //      "9 Ball A": [
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        ...
+  //      ],
+  //      "9 Ball B": [
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        ...
+  //      ],
+  //      ...
+  //    },
+  //    "Wed Jan 3, 1999":  {
+  //      "8 Ball A": [
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        ...
+  //      ],
+  //      "8 Ball B": [
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        {matchInfo...},
+  //        ...
+  //      ],
+  //      ...
+  //    }
+  //  },
+  // ]
+  //
+  // what we get back from the db query is a flat, one dimensional array
+  // of matches, so we have to transform it like above.
   try {
     const season = req.query?.season ?? 9
-    const res = await GetMatchesBySeason(season)
-    const matchGroupingsByDate = {}
-    const now = DateTime.now()
-    res.forEach(match => {
-      const matchDate = DateTime.fromJSDate(match.date).toLocaleString(DateTime.DATE_MED)
-      if (typeof matchGroupingsByDate[matchDate] === 'undefined') {
-        matchGroupingsByDate[matchDate] = []
-      }
-      matchGroupingsByDate[matchDate].push(match)
-    })
-    let scrollIndex = 0
-    const toSend = Object.keys(matchGroupingsByDate).map((key, idx) => {
-      const _date = DateTime.fromJSDate(matchGroupingsByDate[key][0].date)
-      if (_date > now && scrollIndex === 0) {
-        scrollIndex = idx
-      }
-      const matches = matchGroupingsByDate[key].map(match => {
-        const _match = match
-        _match.section_scores = match.section_scores ? phpUnserialize(match.section_scores) : match.section_scores
-        _match.score = match.score ? phpUnserialize(match.score) : match.score
-        _match.format = match.format ? phpUnserialize(match.format) : match.format
-        return _match
+    const cacheRes = await GetMatchesBySeasonCache(season)
+    if (cacheRes) {
+      return cacheRes
+    } else {
+      const res = await GetMatchesBySeason(season)
+      const matchGroupingsByDate = {}
+
+      // group the matches by date
+      res.forEach(match => {
+        const matchDate = DateTime.fromJSDate(match.date).toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)
+        if (typeof matchGroupingsByDate[matchDate] === 'undefined') {
+          matchGroupingsByDate[matchDate] = []
+        }
+        matchGroupingsByDate[matchDate].push(match)
       })
-      return ({[key]: matches})
-    })
-    return {scrollIndex: scrollIndex, matches: toSend}
+
+      // group the matches within each date by division
+      Object.keys(matchGroupingsByDate).forEach(matchDate => {
+        const matchGroupingsByDivision = {}
+        matchGroupingsByDate[matchDate].forEach(match => {
+          if (typeof matchGroupingsByDivision[match.division_short_name] === 'undefined') {
+            matchGroupingsByDivision[match.division_short_name] = []
+          }
+
+          // also phpUnserialize while we are here...
+          const _match = match
+          _match.section_scores = match.section_scores ? phpUnserialize(match.section_scores) : match.section_scores
+          _match.score = match.score ? phpUnserialize(match.score) : match.score
+          _match.format = match.format ? phpUnserialize(match.format) : match.format
+          matchGroupingsByDivision[match.division_short_name].push(_match)
+        })
+        matchGroupingsByDate[matchDate] = matchGroupingsByDivision
+      })
+
+      // transform to array for easy consumption
+      const toSend = Object.keys(matchGroupingsByDate).map(matchDate => ({[matchDate]: matchGroupingsByDate[matchDate]}))
+
+      // determine index for scroll index and unserialize
+      let scrollIndex = 0
+      const now = DateTime.now()
+      let found = false
+      while (scrollIndex < Object.keys(matchGroupingsByDate).length && !found) {
+        const shortDate = Object.keys(matchGroupingsByDate)[scrollIndex]
+        const _date = DateTime.fromFormat(shortDate, "ccc, DD")
+        if (_date > now) {
+          found = true
+        } else {
+          scrollIndex++
+        }
+      }
+
+      // save to cache
+      const cacheKey = `allmatches_${season}`
+//      await CacheSet(cacheKey, JSON.stringify(toSend))
+      return {scrollIndex: scrollIndex, matches: toSend}
+    }
   } catch (e) {
     console.log(e)
     return []
@@ -982,6 +1056,20 @@ async function GetPlayerIdFromToken(token) {
   }
 }
 
+async function GetMatchesBySeasonCache(season) {
+  try {
+    const key = `allmatches_${season}`
+    const res = await CacheGet(key)
+    if (res) {
+      return JSON.parse(res)
+    } else {
+      return null
+    }
+  } catch (e) {
+    return null
+  }
+}
+
 async function GetUserByEmail(email) {
   try {
     let query = `
@@ -1206,7 +1294,7 @@ async function GetPlayerByEmail(email) {
 async function GetMatchesBySeason(season) {
   try {
     let query = `
-      SELECT *,away.short_name as away_short_name, home.short_name as home_short_name
+      SELECT *,away.short_name as away_short_name, home.short_name as home_short_name, divisions.short_name as division_short_name
       FROM matches, divisions, teams home, teams away, venues
       WHERE matches.division_id=divisions.id
         AND divisions.season_id=?

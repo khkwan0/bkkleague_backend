@@ -242,9 +242,22 @@ fastify.get('/season/matches', async (req, reply) => {
   // of matches, so we have to transform it like above.
   try {
     const season = req.query?.season ?? 9
-    const cacheRes = await GetMatchesBySeasonCache(season)
-    if (cacheRes) {
-      return cacheRes
+    const matchGroupingsByDate = await GetMatchesBySeasonCache(season)
+    if (matchGroupingsByDate) {
+      // determine index for scroll index and unserialize
+      let scrollIndex = 0
+      const now = DateTime.now()
+      let found = false
+      while (scrollIndex < Object.keys(matchGroupingsByDate).length && !found) {
+        const shortDate = Object.keys(matchGroupingsByDate)[scrollIndex]
+        const _date = DateTime.fromFormat(shortDate, "ccc, DD")
+        if (_date > now) {
+          found = true
+        } else {
+          scrollIndex++
+        }
+      }
+      return {scrollIndex: scrollIndex, matches: matchGroupingsByDate}
     } else {
       const res = await GetMatchesBySeason(season)
       const matchGroupingsByDate = {}
@@ -295,7 +308,7 @@ fastify.get('/season/matches', async (req, reply) => {
 
       // save to cache
       const cacheKey = `allmatches_${season}`
-//      await CacheSet(cacheKey, JSON.stringify(toSend))
+      await CacheSet(cacheKey, JSON.stringify(toSend))
       return {scrollIndex: scrollIndex, matches: toSend}
     }
   } catch (e) {

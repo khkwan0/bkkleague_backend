@@ -152,6 +152,24 @@ fastify.get('/season', (req, reply) => {
   return {season: 9}
 })
 
+fastify.get('/venues', async (req, reply) => {
+  try {
+    const res = await GetVenues()
+    return res
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/teams', async (req, reply) => {
+  try {
+    const res = await GetTeams()
+    return res
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
 fastify.get('/game/types', async (req, reply) => {
   try {
     const _res = await GetGameTypes()
@@ -162,6 +180,7 @@ fastify.get('/game/types', async (req, reply) => {
     return res
   } catch (e) {
     console.log(e)
+    reply.code(500).send()
   }
 })
 
@@ -570,6 +589,118 @@ async function GetFrames(matchId) {
       return JSON.parse(res)
     } else {
       return {}
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetVenues() {
+  try {
+    const key = 'venues'
+    const res = await CacheGet(key)
+    if (res) {
+      return JSON.parse(res)
+    } else {
+      let query = `
+        SELECT *
+        FROM venues
+        ORDER BY name
+      `
+      const allVenues = await DoQuery(query, [])
+
+      query = `
+        SELECT *
+        FROM teams
+        WHERE division_id IN (
+          SELECT id AS division_id
+          FROM divisions WHERE season_id=(
+            SELECT id
+            FROM seasons
+            WHERE status_id=1
+          )
+        )
+      `
+      const teams = await DoQuery(query, [])
+      let i = 0
+      while (i < allVenues.length) {
+        const venue = allVenues[i]
+        const venueTeams = []
+        let j = 0
+        while (j < teams.length) {
+          const team = teams[j]
+          if (team.venue_id === venue.id) {
+            venueTeams.push(team)
+          }
+          j++
+        }
+        allVenues[i].teams = venueTeams
+        i++
+      }
+      allVenues.sort((a,b) => b.teams.length - a.teams.length)
+      await CacheSet(key, JSON.stringify(allVenues))
+      return allVenues
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetTeams() {
+  try {
+    const key = 'teams'
+    const res = await CacheGet(key)
+    if (res) {
+      return JSON.parse(res)
+    } else {
+      let query = `
+        SELECT teams.*, divisions.name as division_name, divisions.short_name as division_short_name, venues.logo as venue_logo
+        FROM teams, divisions, venues
+        WHERE division_id IN (
+          SELECT id AS division_id
+          FROM divisions WHERE season_id=(
+            SELECT id
+            FROM seasons
+            WHERE status_id=1
+          )
+        )
+        AND teams.division_id=divisions.id
+        AND venues.id=teams.venue_id
+        ORDER BY teams.short_name
+      `
+      const teams = await DoQuery(query, [])
+      let i = 0
+      while (i < teams.length) {
+        query = `
+          SELECT players.*, players_teams.team_role_id as team_role_id
+          FROM players_teams, players
+          WHERE players_teams.team_id=?
+          AND players_teams.player_id=players.id
+        `
+        const _players = await DoQuery(query, [teams[i].id])
+        const captains = []
+        const assistants = []
+        const players = []
+        let j = 0
+        while (j < _players.length) {
+          if (_players[j].team_role_id === 0) {
+            players.push(_players[j])
+          } else if (_players[j].team_role_id === 1) {
+            assistants.push(_players[j])
+          } else {
+            captains.push(_players[j])
+          }
+          j++
+        }
+        teams[i].players = players
+        teams[i].captains = captains
+        teams[i].assistants = assistants
+        teams[i].total_players = players.length + captains.length + assistants.length
+        i++
+      }
+      return teams
     }
   } catch (e) {
     console.log(e)

@@ -10,6 +10,7 @@ import {createClient} from 'redis'
 import crypto from 'crypto'
 import {DateTime} from 'luxon'
 import bcrypt from 'bcrypt'
+import countries from './countries.emoji.json' assert {type: 'json'}
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
@@ -674,10 +675,11 @@ async function GetTeams() {
       let i = 0
       while (i < teams.length) {
         query = `
-          SELECT players.*, players_teams.team_role_id as team_role_id
-          FROM players_teams, players
+          SELECT players.*, players_teams.team_role_id as team_role_id, countries.iso_3166_1_alpha_2_code as country_code
+          FROM players_teams, players, countries
           WHERE players_teams.team_id=?
           AND players_teams.player_id=players.id
+          AND countries.id=players.nationality_id
         `
         const _players = await DoQuery(query, [teams[i].id])
         const captains = []
@@ -685,6 +687,7 @@ async function GetTeams() {
         const players = []
         let j = 0
         while (j < _players.length) {
+          _players[j].flag = countries[_players[j].country_code]?.emoji ?? ''
           if (_players[j].team_role_id === 0) {
             players.push(_players[j])
           } else if (_players[j].team_role_id === 1) {

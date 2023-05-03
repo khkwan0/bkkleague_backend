@@ -6,3 +6,5 @@ etc/letsencrypt
 socketio-client/
 node_modules/
 .env
+assets/
+html/

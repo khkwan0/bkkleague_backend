@@ -345,6 +345,17 @@ fastify.get('/season/matches', async (req, reply) => {
   }
 })
 
+fastify.get('/player/:playerId', async (req, reply) => {
+  try {
+    const playerId = req.params.playerId
+    const playerInfo = await GetPlayerInfo(playerId)
+    return playerInfo
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send()
+  }
+}
+
 fastify.get('/players', async (req, reply) => {
   try {
     const {teamid} = req.query
@@ -687,6 +698,21 @@ async function GetPlayersByTeamId(teamId) {
       captains,
       assistants,
     }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetPlayerInfo(playerId) {
+  try {
+    let query = `
+      SELECT *
+      FROM players
+      WHERE player.id=?
+    `
+    const res = await DoQuery(query, [playerId])
+    return res
   } catch (e) {
     console.log(e)
     throw new Error(e)

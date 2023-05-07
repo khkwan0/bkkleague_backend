@@ -36,7 +36,6 @@ const redisClient = createClient({url: process.env.REDIS_HOST})
   fastify.log.info("Redis HOST: " +  process.env.REDIS_HOST)
   fastify.log.info("Redis is: " + redisClient.isReady ? "Up": "Down")
 })()
-
 // let db = null
 
 
@@ -168,6 +167,15 @@ fastify.get('/teams', async (req, reply) => {
     return res
   } catch (e) {
     reply.code(500).send() 
+  }
+})
+
+fastify.get('/team/:teamId', async (req, reply) => {
+  try {
+    const res = await GetTeamInfo(req.params.teamId)
+    return res
+  } catch (e) {
+    reply.code(500).send()
   }
 })
 
@@ -342,7 +350,7 @@ fastify.get('/players', async (req, reply) => {
     const {teamid} = req.query
     if (typeof teamid !== 'undefined' && teamid) {
       const _teamid = parseInt(teamid)
-      const res = await GetPlayersByTeamId(_teamid) 
+      const res = await GetPlayersByTeamIdFlat(_teamid) 
       return res
     } else {
       const res = await GetAllPlayers()
@@ -649,6 +657,64 @@ async function GetVenues() {
   }
 }
 
+async function GetPlayersByTeamId(teamId) {
+  try {
+    let query = `
+      SELECT players.*, players_teams.team_role_id as team_role_id, countries.iso_3166_1_alpha_2_code as country_code
+      FROM players_teams, players, countries
+      WHERE players_teams.team_id=?
+      AND players_teams.player_id=players.id
+      AND countries.id=players.nationality_id
+    `
+    const _players = await DoQuery(query, [teamId])
+    const captains = []
+    const assistants = []
+    const players = []
+    let j = 0
+    while (j < _players.length) {
+      _players[j].flag = countries[_players[j].country_code]?.emoji ?? ''
+      if (_players[j].team_role_id === 0) {
+        players.push(_players[j])
+      } else if (_players[j].team_role_id === 1) {
+        assistants.push(_players[j])
+      } else {
+        captains.push(_players[j])
+      }
+      j++
+    }
+    return {
+      players,
+      captains,
+      assistants,
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetTeamInfo(teamId) {
+  try {
+    let teamQuery = `
+      SELECT teams.*, divisions.short_name, venues.name, venues.logo as venue_logo
+      FROM teams, divisions, venues
+      WHERE teams.id=?
+      AND divisions.id=teams.division_id
+      AND venues.id=teams.venue_id
+    `
+    const teamRes = await DoQuery(teamQuery, [teamId])
+    const {players, captains, assistants} = await GetPlayersByTeamId(teamId)
+    teamRes[0].players = players
+    teamRes[0].captains = captains
+    teamRes[0].assistants = assistants
+    teamRes[0].total_players = players.length + captains.length + assistants.length
+    return teamRes[0]
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetTeams() {
   try {
     const key = 'teams'
@@ -674,29 +740,7 @@ async function GetTeams() {
       const teams = await DoQuery(query, [])
       let i = 0
       while (i < teams.length) {
-        query = `
-          SELECT players.*, players_teams.team_role_id as team_role_id, countries.iso_3166_1_alpha_2_code as country_code
-          FROM players_teams, players, countries
-          WHERE players_teams.team_id=?
-          AND players_teams.player_id=players.id
-          AND countries.id=players.nationality_id
-        `
-        const _players = await DoQuery(query, [teams[i].id])
-        const captains = []
-        const assistants = []
-        const players = []
-        let j = 0
-        while (j < _players.length) {
-          _players[j].flag = countries[_players[j].country_code]?.emoji ?? ''
-          if (_players[j].team_role_id === 0) {
-            players.push(_players[j])
-          } else if (_players[j].team_role_id === 1) {
-            assistants.push(_players[j])
-          } else {
-            captains.push(_players[j])
-          }
-          j++
-        }
+        const {players, captains, assistants} = await GetPlayersByTeamId(teams[i].id)
         teams[i].players = players
         teams[i].captains = captains
         teams[i].assistants = assistants
@@ -1377,7 +1421,7 @@ async function GetFrameTypes() {
 async function GetAllPlayers() {
   try {
     let query = `
-      SELECT players.id as playerId, players.nickname, players.firstName, players.lastName
+      SELECT * 
       FROM players
     `
     const res = await DoQuery(query, [])
@@ -1400,7 +1444,7 @@ async function GetGameTypes() {
   }
 }
 
-async function GetPlayersByTeamId(teamId) {
+async function GetPlayersByTeamIdFlat(teamId) {
   try {
     let query = `
       SELECT

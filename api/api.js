@@ -354,17 +354,18 @@ fastify.get('/player/:playerId', async (req, reply) => {
     console.log(e)
     reply.code(500).send()
   }
-}
+})
 
 fastify.get('/players', async (req, reply) => {
   try {
-    const {teamid} = req.query
+    const {teamid, active_only} = req.query
     if (typeof teamid !== 'undefined' && teamid) {
       const _teamid = parseInt(teamid)
       const res = await GetPlayersByTeamIdFlat(_teamid) 
       return res
     } else {
-      const res = await GetAllPlayers()
+      const activeOnly = active_only === 'true' ? true : false
+      const res = await GetAllPlayers(activeOnly)
       return res
     }
   } catch (e) {
@@ -1444,17 +1445,91 @@ async function GetFrameTypes() {
   }
 }
 
-async function GetAllPlayers() {
+async function GetAllPlayers(activeOnly = true) {
   try {
-    let query = `
-      SELECT * 
-      FROM players
-    `
-    const res = await DoQuery(query, [])
+    const currentSeason = (await GetCurrentSeason()).id
+    let query = ''
+    let _frames = []
+    if (activeOnly) {
+      query = `
+        SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, countries.iso_3166_1_alpha_2_code country, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt
+        FROM players_frames, players, frames, matches, divisions, seasons, countries
+        WHERE players_frames.player_id=players.id
+          AND players_frames.frame_id=frames.id
+          and frames.match_id=matches.id
+          AND matches.division_id=divisions.id
+          AND divisions.season_id=seasons.id
+          AND players.nationality_id=countries.id
+          AND seasons.id=?
+        GROUP BY is_home, player_name,firstname, lastname, country, p_id, division, htid, atid, season, s_id  
+        ORDER BY s_id DESC, division DESC
+      `
+      _frames = await DoQuery(query, [currentSeason])
+    } else {
+      console.log('here')
+      query = `
+        SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, countries.iso_3166_1_alpha_2_code country, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt
+        FROM players_frames, players, frames, matches, divisions, seasons, countries
+        WHERE players_frames.player_id=players.id
+          AND players_frames.frame_id=frames.id
+          and frames.match_id=matches.id
+          AND matches.division_id=divisions.id
+          AND divisions.season_id=seasons.id
+          AND players.nationality_id=countries.id
+        GROUP BY is_home, player_name,firstname, lastname, country, p_id, division, htid, atid, season, s_id  
+        ORDER BY s_id DESC, division DESC
+      `
+      _frames = await DoQuery(query, [])
+    }
+
+    query = `SELECT * FROM teams`
+    const _teams = await DoQuery(query, [])
+    const teams = {}
+    _teams.forEach(team => teams[team.id] = team)
+
+    const players = {}
+    _frames.forEach(frame => {
+      if (typeof players[frame.p_id] === 'undefined') {
+        players[frame.p_id] = {
+          flag: countries[frame.country]?.emoji ?? '',
+          player_id: frame.p_id,
+          firstname: frame.firstname,
+          lastname: frame.lastname,
+          name: frame.player_name,
+          total: 0,
+          teams: [],
+          seasons: {}
+        }
+      }
+      if (typeof players[frame.p_id].seasons[frame.season] === 'undefined') {
+        players[frame.p_id].seasons[frame.season] = {}
+      }
+      const team = frame.is_home ? teams[frame.htid] : teams[frame.atid]
+      if (frame.s_id === currentSeason) {
+        if (!players[frame.p_id].teams.includes(team.short_name)) {
+          players[frame.p_id].teams.push(team.short_name)
+        }
+      }
+      if (typeof players[frame.p_id].seasons[frame.season][team.name] === 'undefined') {
+        players[frame.p_id].seasons[frame.season][team.name] = 0
+      }
+      players[frame.p_id].seasons[frame.season][team.name] += frame.cnt
+      players[frame.p_id].total += frame.cnt
+    })
+    const res = Object.keys(players).map(key => players[key])
+    res.sort((a, b) => a.name > b.name ? 1 : -1)
+//    console.log(JSON.stringify(res, null, 2))
     return res
   } catch (e) {
+    console.log(e)
     throw new Error(e)
   }
+}
+
+async function GetCurrentSeason() {
+  let query = `SELECT * FROM seasons WHERE status_id=1 LIMIT 1`
+  const res = await DoQuery(query, [])
+  return res[0]
 }
 
 async function GetGameTypes() {

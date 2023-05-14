@@ -401,6 +401,19 @@ fastify.get('/stats/doubles', async (req, reply) => {
 
 })
 
+fastify.get('/stats/match', async (req, reply) => {
+  try {
+    const playerId = req.query.playerid ?? null
+    if (!playerId) {
+      return null
+    }
+    const stats = await GetMatchPerformance(playerId)
+    return stats
+  } catch (e) {
+    return []
+  }
+})
+
 fastify.post('/player', async (req, reply) => {
   try {
     if (typeof req.body.nickName !== 'undefined' && req.body.nickName.length > 2) {
@@ -1472,6 +1485,64 @@ async function GetFrameTypes() {
   }
 }
 
+async function GetMatchPerformance(playerId) {
+  try {
+    const rawStats = await GetMatchPerformanceRaw(playerId)
+    const _stats = {}
+    rawStats.forEach(stat => {
+      if (typeof _stats[stat.id] === 'undefined') {
+        _stats[stat.id] = {
+          singlesPlayed: 0,
+          singlesWon: 0,
+          doublesPlayed: 0,
+          doublesWon: 0,
+          date: stat.date
+        }
+      }
+      if (stat.no_players === 2) {
+        _stats[stat.id].doublesPlayed += stat.count
+        if (stat.home_team === stat.home_win) {
+          _stats[stat.id].doublesWon += stat.count
+        }
+      }
+      if (stat.no_players === 1) {
+        _stats[stat.id].singlesPlayed += stat.count
+        if (stat.home_team === stat.home_win) {
+          _stats[stat.id].singlesWon += stat.count
+        }
+      }
+    })
+    const stats = Object.keys(_stats).map(key => _stats[key])
+    stats.sort((a, b) => b.date > a.date ? 1 : -1)
+    return stats
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+async function GetMatchPerformanceRaw(playerId) {
+  try {
+    const currentSeason = (await GetCurrentSeason()).id
+    let query = `
+      SELECT m.id, pf.home_team, f.home_win, m.date, ft.no_players, count(*) count
+      FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s
+      WHERE pf.player_id=?
+        AND pf.frame_id=f.id
+        AND f.frame_type_id=ft.id
+        AND f.match_id=m.id
+        AND m.division_id=d.id
+        AND d.season_id=s.id
+        AND s.id=?
+      GROUP BY m.id, pf.home_team, f.home_win, m.date, ft.no_players
+    `
+    const res = await DoQuery(query, [playerId, currentSeason])
+    return res
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetDoublesStats(playerId) {
   try {
     const rawStats = await GetDoublesStatsRaw(playerId)
@@ -1538,7 +1609,7 @@ async function GetPlayerStats(playerId) {
   try {
     const currentSeason = (await GetCurrentSeason()).id
     let query = `
-      SELECT pf.player_id player_id, ft.name game_type, ft.no_players no_players, s.name, pf.home_team, f.home_win
+      SELECT pf.player_id player_id, ft.name game_type, ft.game_type_id, ft.no_players no_players, s.name, pf.home_team, f.home_win
       FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s
       WHERE pf.player_id=?
         AND pf.frame_id=f.id
@@ -1550,26 +1621,73 @@ async function GetPlayerStats(playerId) {
     `
 
     const _frames = await DoQuery(query, [playerId, currentSeason])
-    const summary = {}
-    let singlesCount = 0
-    let doublesCount = 0
-    let singlesWon = 0
-    let doublesWon = 0
+    const summary = {
+      "8 Ball Single": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "8 Ball Double": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      }, 
+      "9 Ball Single": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "9 Ball Double": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "8 Ball": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "9 Ball": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "Singles": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "Doubles": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      "Total": {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+    }
+    let eightBallSingleCount = 0
+    let eightBallSingleWins = 0
+    let nineBallSingleCount = 0
+    let nineBallSingleWins = 0
+    let eightBallDoubleCount = 0
+    let eightBallDoubleWins = 0
+    let nineBallDoubleCount = 0
+    let nineBallDoubleWins = 0
     _frames.forEach(frame => {
       if (typeof summary[frame.game_type] === 'undefined') {
         summary[frame.game_type] = {
-          played: 0,
-          won: 0,
-          winp: 0,
-          wgtd: 0,
-        }
-        summary.Singles = {
-          played: 0,
-          won: 0,
-          winp: 0,
-          wgtd: 0,
-        }
-        summary.Doubles = {
           played: 0,
           won: 0,
           winp: 0,
@@ -1580,42 +1698,76 @@ async function GetPlayerStats(playerId) {
       if (frame.home_team === frame.home_win) {
         summary[frame.game_type].won++
       }
-      if (frame.no_players === 1) {
-        singlesCount++
+      if (frame.game_type_id === 8) {
+        if (frame.no_players === 1) {
+          eightBallSingleCount++
+        }
+        if (frame.no_players === 2) {
+          eightBallDoubleCount++
+        }
         if (frame.home_team === frame.home_win) {
-          singlesWon++
+          if (frame.no_players === 1) {
+            eightBallSingleWins++
+          }
+          if (frame.no_players === 2) {
+            eightBallDoubleWins++
+          }
         }
       }
-      if (frame.no_players === 2) {
-        doublesCount++
+      if (frame.game_type_id === 9) {
+        if (frame.no_players === 1) {
+          nineBallSingleCount++
+        }
+        if (frame.no_players === 2) {
+          nineBallDoubleCount++
+        }
         if (frame.home_team === frame.home_win) {
-          doublesWon++
+          if (frame.no_players === 1) {
+            nineBallSingleWins++
+          }
+          if (frame.no_players === 2) {
+            nineBallDoubleWins++
+          }
         }
       }
     })
-    summary.Singles.played = singlesCount
-    summary.Singles.won = singlesWon
-    summary.Doubles.played= doublesCount
-    summary.Doubles.won = doublesWon
+    summary.Singles.played = eightBallSingleCount + nineBallSingleCount
+    summary.Singles.won = eightBallSingleWins + nineBallSingleWins
+    summary.Doubles.played= eightBallDoubleCount + nineBallDoubleCount
+    summary.Doubles.won = eightBallDoubleWins + nineBallDoubleWins
+    summary['8 Ball'].played = eightBallSingleCount + eightBallDoubleCount
+    summary['8 Ball'].won = eightBallSingleWins + eightBallDoubleWins
+    summary['9 Ball'].played = nineBallSingleCount + nineBallDoubleCount
+    summary['9 Ball'].won = nineBallSingleWins + nineBallDoubleWins
 
     for (let key in summary) {
       summary[key].winp = summary[key].played > 0 ? (summary[key].won / summary[key].played * 100.0).toFixed(2) : '-'
-      summary[key].wgtd = summary[key].winp
+      if (key === '9 Ball') {
+        summary[key].wgtd = (nineBallSingleCount + nineBallDoubleCount) > 0 ? ((nineBallSingleWins + 0.5 * nineBallDoubleWins) / (nineBallSingleCount + 0.5 * nineBallDoubleCount) * 100.0).toFixed(2) : '-'
+      } else {
+        summary[key].wgtd = summary[key].winp
+      }
     }
 
+    const ordered = summary
+/*
     const ordered = Object.keys(summary).sort().reduce((obj, key) => {
       obj[key] = summary[key]
       return obj
     }, {})
+    */
 
     const totalPlayed = ordered.Singles.played + ordered.Doubles.played
     const totalWon = ordered.Singles.won + ordered.Doubles.won
-    const totalWinp = totalPlayed > 0 ? (totalWon / totalPlayed * 100.0).toFixed(2) : '-'
+    const weightedPlayed = ordered.Singles.played + 0.5 * ordered.Doubles.played
+    const weightedWon = ordered.Singles.won + 0.5 * ordered.Doubles.won
+    const totalWinp = totalPlayed > 0 ? (totalWon /totalPlayed * 100.00).toFixed(2) : '-'
+    const totalWgtd = totalPlayed > 0 ? (weightedWon / weightedPlayed * 100.0).toFixed(2) : '-'
     ordered.Total = {
       played: totalPlayed,
       won: totalWon,
       winp: totalWinp,
-      wgtd: totalWinp,
+      wgtd: totalWgtd,
     }
     return ordered 
   } catch(e) {

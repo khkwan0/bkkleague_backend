@@ -401,11 +401,25 @@ fastify.get('/stats/doubles', async (req, reply) => {
 
 })
 
+fastify.get('/match/stats/:matchId', async (req, reply) => {
+  try {
+    const matchId = req.params.matchId ?? null
+    if (!matchId) {
+      reply.code(404).send()
+    } else {
+      const stats = await GetMatchStats(matchId)
+      return stats
+    }
+  } catch (e) {
+    return []
+  }
+})
+
 fastify.get('/stats/match', async (req, reply) => {
   try {
     const playerId = req.query.playerid ?? null
     if (!playerId) {
-      return null
+      reply.code(404).send()
     }
     const stats = await GetMatchPerformance(playerId)
     return stats
@@ -1485,6 +1499,77 @@ async function GetFrameTypes() {
   }
 }
 
+async function GetMatchStats(matchId) {
+  try {
+    const rawStats = await GetMatchStatsRaw(matchId)
+    const _stats = {}
+    let awayScore = 0
+    let homeScore = 0
+    rawStats.forEach(stat => {
+      if (typeof _stats[stat.f_id] === 'undefined') {
+        _stats[stat.f_id] = {
+          frameId: stat.f_id,
+          gameType: stat.alt_name,
+          no_players: stat.no_players,
+          homePlayers: [],
+          awayPlayers: [],
+          home_win: stat.home_win === stat.home_team ? 1 : 0,
+          homeTeam: {
+            name: stat.home_team_name,
+            id: stat.home_team_id ,
+          },
+          awayTeam: {
+            name: stat.away_team_name,
+            id: stat.away_team_id,
+          }
+        }
+      }
+      if (stat.home_team === 1) {
+        _stats[stat.f_id].homePlayers.push({
+          playerId: stat.p_id,
+          nickname: stat.nickname,
+        })
+      } else {
+        _stats[stat.f_id].awayPlayers.push({
+          playerId: stat.p_id,
+          nickname: stat.nickname,
+        })
+      }
+    })
+    const stats = Object.keys(_stats).map(key => _stats[key])
+    return stats
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetMatchStatsRaw(matchId) {
+  try {
+    let query = `
+      SELECT x.*, hteam.name home_team_name, ateam.name away_team_name
+      FROM (
+          SELECT pf.id pf_id, f.id f_id, f.home_win, pf.home_team, ft.no_players, p.nickname, p.id p_id, m.id match_id, m.home_team_id, m.away_team_id, ft.alt_name
+        FROM players_frames pf, frames f, frame_types ft, players p, matches m
+        WHERE f.match_id=2511
+            AND f.frame_type_id=ft.id
+            AND f.id=pf.frame_id
+            AND pf.player_id=p.id
+            AND f.match_id=m.id
+        ORDER BY f.id) as x
+      LEFT OUTER JOIN teams hteam
+        ON hteam.id=x.home_team_id
+      LEFT OUTER JOIN teams ateam
+        ON ateam.id=x.away_team_id;
+    `
+    const res = await DoQuery(query, [matchId])
+    return res
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetMatchPerformance(playerId) {
   try {
     const rawStats = await GetMatchPerformanceRaw(playerId)
@@ -1492,6 +1577,7 @@ async function GetMatchPerformance(playerId) {
     rawStats.forEach(stat => {
       if (typeof _stats[stat.id] === 'undefined') {
         _stats[stat.id] = {
+          matchId: stat.id,
           singlesPlayed: 0,
           singlesWon: 0,
           doublesPlayed: 0,

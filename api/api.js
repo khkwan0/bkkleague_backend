@@ -869,7 +869,7 @@ async function GetPlayerStatsInfo(playerId) {
 async function GetTeamInfo(teamId) {
   try {
     let teamQuery = `
-      SELECT teams.*, divisions.short_name, venues.name, venues.logo as venue_logo
+      SELECT teams.*, divisions.short_name as divison_short_name, divisions.name as division.name, venues.name, venues.logo as venue_logo
       FROM teams, divisions, venues
       WHERE teams.id=?
       AND divisions.id=teams.division_id

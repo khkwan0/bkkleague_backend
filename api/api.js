@@ -439,6 +439,16 @@ fastify.get('/stats/match', async (req, reply) => {
   }
 })
 
+fastify.get('/league/standings/:seasonId', async (req, reply) => {
+  try {
+    const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+    const standings = await GetStandings(seasonId)
+    return standings
+  } catch (e) {
+    return []
+  }
+})
+
 fastify.post('/player', async (req, reply) => {
   try {
     if (typeof req.body.nickName !== 'undefined' && req.body.nickName.length > 2) {
@@ -922,6 +932,81 @@ async function GetTeams() {
       }
       return teams
     }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetStandings(_seasonId = null) {
+  try {
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    let query = `
+      SELECT x.id, x.name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id
+      FROM (
+          SELECT t.id, t.name, d.name division_name
+          FROM teams t, divisions d, seasons s
+          WHERE t.division_id=d.id
+            AND d.season_id=s.id
+            AND s.id=?
+          ) as x, matches m, teams ta, teams th
+      WHERE (m.home_team_id=x.id OR m.away_team_id=x.id)
+        AND m.status_id > 0
+        AND m.away_team_id=ta.id
+        AND m.home_team_id=th.id
+      ORDER BY x.division_name, m.date;
+    `
+    const rawStandings = await DoQuery(query, [seasonId])
+    const _standings = {}
+    rawStandings.forEach(stat => {
+      if (typeof _standings[stat.division_name] === 'undefined') {
+        _standings[stat.division_name] = {
+          division: stat.division_name,
+          teams: {}
+        }
+      }
+      if (typeof _standings[stat.division_name].teams[stat.id] === 'undefined') {
+        _standings[stat.division_name].teams[stat.id] = {
+          name: stat.team_name,
+          points: 0,
+          frames: 0,
+          played: 0,
+          matches: []
+        }
+      }
+      _standings[stat.division_name].teams[stat.id].played++
+      if (stat.id === stat.home_team_id) {
+        _standings[stat.division_name].teams[stat.id].points += stat.home_points
+        _standings[stat.division_name].teams[stat.id].frames += stat.home_frames
+        _standings[stat.division_name].teams[stat.id].matches.push({
+          home: true,
+          vs: stat.away_team,
+          vsId: stat.away_team_id,
+          pts: stat.home_points,
+          frames: stat.home_frames,
+          matchId: stat.match_id,
+        })
+      } else {
+        _standings[stat.division_name].teams[stat.id].points += stat.away_points
+        _standings[stat.division_name].teams[stat.id].frames += stat.away_frames
+        _standings[stat.division_name].teams[stat.id].matches.push({
+          home: false,
+          vs: stat.home_team,
+          vsId: stat.home_team_id,
+          pts: stat.away_points,
+          frames: stat.away_frames,
+          matchId: stat.match_id,
+        })
+      }
+    })
+    const __standings = Object.keys(_standings).map(key => _standings[key])
+    const standings = __standings.map(division => {
+      const _division = {...division}
+      _division.teams = Object.keys(division.teams).map(team => division.teams[team])
+      _division.teams.sort((a, b) => b.points - a.points)
+      return _division
+    })
+    return standings
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -1643,7 +1728,7 @@ async function GetMatchStatsRaw(matchId) {
       FROM (
           SELECT pf.id pf_id, f.id f_id, f.home_win, pf.home_team, ft.no_players, p.nickname, p.id p_id, m.id match_id, m.home_team_id, m.away_team_id, ft.alt_name
         FROM players_frames pf, frames f, frame_types ft, players p, matches m
-        WHERE f.match_id=2511
+        WHERE f.match_id=?
             AND f.frame_type_id=ft.id
             AND f.id=pf.frame_id
             AND pf.player_id=p.id
@@ -1652,7 +1737,7 @@ async function GetMatchStatsRaw(matchId) {
       LEFT OUTER JOIN teams hteam
         ON hteam.id=x.home_team_id
       LEFT OUTER JOIN teams ateam
-        ON ateam.id=x.away_team_id;
+        ON ateam.id=x.away_team_id
     `
     const res = await DoQuery(query, [matchId])
     return res

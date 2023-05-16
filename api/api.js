@@ -942,9 +942,9 @@ async function GetStandings(_seasonId = null) {
   try {
     const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
     let query = `
-      SELECT x.id, x.name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id
+      SELECT x.id, x.short_name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id
       FROM (
-          SELECT t.id, t.name, d.name division_name
+          SELECT t.id, t.short_name, d.name division_name
           FROM teams t, divisions d, seasons s
           WHERE t.division_id=d.id
             AND d.season_id=s.id

@@ -439,6 +439,16 @@ fastify.get('/stats/match', async (req, reply) => {
   }
 })
 
+fastify.get('/stats/teams/:seasonId', async (req, reply) => {
+  try {
+    const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+    const stats = await GetTeamStats(seasonId)
+    return stats
+  } catch (e) {
+    return []
+  }
+})
+
 fastify.get('/league/standings/:seasonId', async (req, reply) => {
   try {
     const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
@@ -935,6 +945,80 @@ async function GetTeams() {
   } catch (e) {
     console.log(e)
     throw new Error(e)
+  }
+}
+
+
+async function GetTeamStats(_seasonId = null) {
+  try {
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    let query = `
+      SELECT ta.short_name away_team, th.short_name home_team, x.home_frames, x.away_frames, x.home_points, x.away_points, x.score, x.date, x.home_team_id, x.away_team_id, x.match_id
+      FROM (
+        SELECT m.home_team_id, m.away_team_id, m.date, m.home_frames, m.away_frames, m.home_points, m.away_points, m.score, m.id match_id
+        FROM matches m, divisions d, seasons s
+        WHERE m.division_id=d.id
+          AND m.status_id=3
+          AND d.season_id=s.id
+          AND s.id=?
+      ) as x, teams ta, teams th
+      WHERE x.home_team_id=th.id
+        AND x.away_team_id=ta.id
+      ORDER BY date
+    `
+    const rawStats = await DoQuery(query, [seasonId])
+    const _stats = {}
+    rawStats.forEach(match => {
+      if (typeof _stats[match.away_team_id] === 'undefined') {
+        _stats[match.away_team_id] = {
+          name: match.away_team,
+          played: 0,
+          won: 0,
+          lost: 0,
+          points: 0,
+          frames: 0,
+          matches: [],
+        }
+      }
+      if (typeof _stats[match.home_team_id] === 'undefined') {
+        _stats[match.home_team_id] = {
+          name: match.home_team,
+          played: 0,
+          won: 0,
+          lost: 0,
+          points: 0,
+          frames: 0,
+          matches: []
+        }
+      }
+      _stats[match.away_team_id].played++
+      _stats[match.home_team_id].played++
+      _stats[match.away_team_id].frames += match.home_frames
+      _stats[match.home_team_id].frames += match.away_frames
+      if (match.home_frames > match.away_frames) {
+        _stats[match.home_team_id].won++
+        _stats[match.away_team_id].lost++
+      } else {
+        _stats[match.away_team_id].won++
+        _stats[match.home_team_id].lost++
+      }
+      const _match = {...match}
+      _match.score = _match.score ? phpUnserialize(_match.score) : _match.score
+      _stats[match.home_team_id].points += match.home_points
+      _stats[match.away_team_id].points += match.away_points
+      _stats[match.home_team_id].matches.push(_match)
+      _stats[match.away_team_id].matches.push(_match)
+    })
+    const stats = Object.keys(_stats).map(key => {
+      const __stats = {..._stats[key]}
+      __stats.perc = (__stats.won / __stats.played).toFixed(2)
+      return __stats
+    })
+    stats.sort((a, b) => b.points - a.points || b.frames - a.frames)
+    return stats
+  } catch (e) {
+    console.log(e)
+    return []
   }
 }
 

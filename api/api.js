@@ -449,6 +449,16 @@ fastify.get('/stats/teams/:seasonId', async (req, reply) => {
   }
 })
 
+fastify.get('/stats/players/:seasonId', async (req, reply) => {
+  try {
+    const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+    const stats = await GetLeaguePlayerStats(seasonId)
+    return stats
+  } catch (e) {
+    return []
+  }
+})
+
 fastify.get('/league/standings/:seasonId', async (req, reply) => {
   try {
     const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
@@ -948,6 +958,61 @@ async function GetTeams() {
   }
 }
 
+async function GetLeaguePlayerStats(_seasonId = null) {
+  try {
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    let query = `
+      SELECT f.home_win, pf.home_team, p.id player_id, p.nickname name, ft.no_players
+      FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s, players p
+      WHERE pf.frame_id=f.id
+        AND pf.player_id=p.id
+        AND f.frame_type_id=ft.id
+        AND f.match_id=m.id
+        AND m.division_id=d.id
+        AND d.season_id=s.id
+        AND s.id=?
+    `
+    const rawStats = await DoQuery(query, [seasonId])
+    const _stats = {}
+    rawStats.forEach(stat => {
+      if (typeof _stats[stat.player_id] === 'undefined') {
+        _stats[stat.player_id] = {
+          name: stat.name,
+          playerId: stat.player_id,
+          adjPlayed: 0,
+          played: 0,
+          won: 0,
+          rawPerf: 0.00,
+          rawPerfDisp: '0.00',
+          adjPerf: 0.00,
+          adjPerfDisp: '0.00',
+        }
+      }
+      _stats[stat.player_id].played++
+      const no_players = stat.no_players
+      _stats[stat.player_id].adjPlayed += no_players === 2 ? 0.5 : 1.0
+      if (stat.home_win === stat.home_team) {
+        _stats[stat.player_id].won += no_players === 2 ? 0.5 : 1.0
+      }
+    })
+    const stats = []
+    Object.keys(_stats).forEach(key => {
+      if (_stats[key].played >= 30) {
+        const _stat = {..._stats[key]}
+        _stat.rawPerfDisp = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0).toFixed(2) : '0.00'
+        _stat.rawPerf = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0) : 0.00
+        _stat.adjPerf = _stat.rawPerf * ((_stat.played - 1)/_stat.played)
+        _stat.adjPerfDisp = _stat.adjPerf.toFixed(2)
+        stats.push(_stat)
+      }
+    })
+    stats.sort((a, b) => b.adjPerf - a.adjPerf)
+    console.log(stats)
+    return stats
+  } catch (e) {
+    console.log(e)
+  }
+}
 
 async function GetTeamStats(_seasonId = null) {
   try {
@@ -1395,7 +1460,6 @@ async function UpdateFrame(data, lockKey) {
             frameNumber: data.frameNumber,
           })
         } else if (data.type === 'players') {
-          console.log(data)
           const newFrame = {
             frameIdx: data.frameIdx,
             winner: 0,

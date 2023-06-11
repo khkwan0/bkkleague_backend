@@ -569,15 +569,15 @@ fastify.ready().then(() => {
                   fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
                   const lockKey = 'matchinfo_' + data.matchId
                   const finalizedData = {}
-                  data.data.timestmap = data.timestamp
+                  data.data.timestamp = data.timestamp
                   finalizedData['finalize_' + data.data.side] = data.data
                   const res = await UpdateMatch(finalizedData, lockKey)
                   const matchInfo = await GetMatchInfo(data.matchId)
                   const {finalize_home, finalize_away} = matchInfo
-                  if (finalize_home && finalize_away) {
+                  socket.to(room).emit('match_update', data)
+                  if (ValidateFinalize(finalize_home, finalize_away)) {
                     FinalizeMatch(data.matchId)
                   }
-                  socket.to(room).emit("match_update", data)
                 }
 
                 if (data.type === 'newnote') {
@@ -636,6 +636,34 @@ fastify.ready().then(() => {
   })
 })
 
+/* ---------  FINISH FASIFY ------------*/
+
+function ValidateFinalize(home, away) {
+  if (typeof home === 'undefined' || typeof away === 'undefined') {
+    return false
+  }
+  if (typeof home.matchId === 'undefined' ||  typeof away.matchId === 'undefined') {
+    return false
+  }
+  if (typeof home.timestamp === 'undefined' || typeof away.timestamp === 'undefined') {
+    return false
+  }
+  if (typeof home.side === 'undefined' || typeof away.side === 'undefined') {
+    return false
+  }
+  if (home.side !== 'home' || away.side !=='away') {
+    return false
+  }
+  if (typeof home.teamId === 'undefined' || typeof away.teamId === 'undefined') {
+    return false
+  }
+  if (home.matchId !== away.matchId) {
+    return false
+  }
+  return true
+}
+
+// Make sure only members with correct secret tokens can validate
 function ValidateIncoming(data) {
   return true
 }
@@ -888,7 +916,6 @@ async function GetPlayerStatsInfo(playerId) {
       player.seasons[frame.season][team.name] += frame.cnt
       player.total += frame.cnt
     })
-    console.log(player)
     return player
   } catch (e) {
     console.log(e)
@@ -1007,7 +1034,6 @@ async function GetLeaguePlayerStats(_seasonId = null) {
       }
     })
     stats.sort((a, b) => b.adjPerf - a.adjPerf)
-    console.log(stats)
     return stats
   } catch (e) {
     console.log(e)
@@ -1068,7 +1094,11 @@ async function GetTeamStats(_seasonId = null) {
         _stats[match.home_team_id].lost++
       }
       const _match = {...match}
-      _match.score = _match.score ? phpUnserialize(_match.score) : _match.score
+      try {
+        _match.score = _match.score ? phpUnserialize(_match.score) : _match.score
+      } catch (e) {
+        _match.score = _match.score ? JSON.parsJSON.parsee(_match.score) : _match.score
+      }
       _stats[match.home_team_id].points += match.home_points
       _stats[match.away_team_id].points += match.away_points
       _stats[match.home_team_id].matches.push(_match)
@@ -1511,7 +1541,6 @@ async function FinalizeMatch(matchId) {
           // save each frame in frames table
           let i = 0
           while (i < frames.length) {
-            console.log(frames[i])
             const toSave = {
               match_id: matchId,
               frame_number: frames[i].frameNumber - 1,
@@ -1554,12 +1583,14 @@ async function FinalizeMatch(matchId) {
       }
       // finally save in matches table...
       const matchInfo = JSON.parse(rawMatchInfo)
-      const first_break_home_team = matchInfo.firstBreak === matchInfo.home_team_id ? 1 : 0
+      const homeTeamId = matchInfo.finalize_home?.teamId ?? 0
+      const first_break_home_team = matchInfo.firstBreak === homeTeamId ? 1 : 0
       let home_frames = 0
       let away_frames = 0
       frames.forEach(frame => {
+//        console.log(frame, matchInfo.home_team_id)
         if (frame.type !== 'section') {
-          if (frame.winner === matchInfo.home_team_id) {
+          if (frame.winner === homeTeamId) {
             home_frames++
           } else {
             away_frames++
@@ -1585,11 +1616,13 @@ async function FinalizeMatch(matchId) {
         comments.history = matchInfo.history
       }
 
+      const startTime = DateTime.fromMillis(matchInfo.startTime).toLocaleString(DateTime.TIME_24_WITH_SECONDS)
+      const endTime = DateTime.now().toLocaleString(DateTime.TIME_24_WITH_SECONDS)
       const toSaveMatch = {
         first_break_home_team: first_break_home_team,
         status_id: 3,
-        start_time: matchInfo.startTime,
-        end_time: Date.now(),
+        start_time: startTime,
+        end_time: endTime,
         home_frames: home_frames,
         away_frames: away_frames,
         home_points: home_points,
@@ -1603,7 +1636,7 @@ async function FinalizeMatch(matchId) {
         matchInfo: matchInfo,
         frames: frames,
       }
-      await InsertFinalizedMatch(matchId, finalizedMatchData)
+//      await InsertFinalizedMatch(matchId, finalizedMatchData)
       return false
     }
   } catch (e) {
@@ -1689,8 +1722,8 @@ async function InsertFinalizedMatch(matchId, matchData) {
       VALUES (?, ?)
     `
     const params = [matchId, JSON.stringify(matchData)]
-    console.log(query, params)
     /*
+    console.log(query, params)
     const res = await DoQuery(query, params)
     return res
     */
@@ -1712,12 +1745,12 @@ async function UpdateFinalizedMatch(matchId, toSave) {
     `
     const params = Object.keys(toSave).map(key => toSave[key])
     params.push(matchId)
-    console.log(query, params)
-    /*
-    await res = await DoQuery(query, params)
+    
+    const res = await DoQuery(query, params)
     return res
-    */
+    
   } catch (e) {
+    console.log(e)
     throw new Error(e)
   }
 }
@@ -1729,11 +1762,8 @@ async function SaveFrame(frame) {
       VALUES (?, ?, ?, ?)
     `
     const params = Object.keys(frame).map(key => frame[key])
-    console.log(query, params)
-    /*
     const res = await DoQuery(query, params)
     return res
-    */
   } catch (e) {
     throw new Error(e)
   }
@@ -1745,10 +1775,8 @@ async function SavePlayersFrames(frame) {
       INSERT INTO players_frames (frame_id, player_id, home_team)
       VALUES (?, ?, ?)
     `
-    /*
     const params = Object.keys(frame).map(key => frame[key])
     const res = await DoQuery(query, params)
-    */
   } catch (e) {
     throw new Error(e)
   }
@@ -2399,6 +2427,7 @@ async function GetMatches(userid, newonly) {
                 AND teams.venue_id=v.id
                 AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
                 AND m.division_id=d.id
+                AND m.status_id != 3
             ) AS x
             LEFT JOIN teams t
               ON x.home_team_id=t.id
@@ -2421,6 +2450,7 @@ async function GetMatches(userid, newonly) {
                 AND teams.venue_id=v.id
                 AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
                 AND m.division_id=d.id
+                AND m.status_id != 3
             ) AS x
             LEFT JOIN teams t
               ON x.home_team_id=t.id
@@ -2455,6 +2485,7 @@ async function GetMatches(userid, newonly) {
               AND m.home_team_id=teams.id
               AND teams.venue_id=v.id
               AND m.division_id=d.id
+              AND m.status_id != 3
           ) AS x
           LEFT JOIN teams t
             ON x.home_team_id=t.id
@@ -2475,6 +2506,7 @@ async function GetMatches(userid, newonly) {
             WHERE m.home_team_id=teams.id
               AND teams.venue_id=v.id
               AND m.division_id=d.id
+              AND m.status_id != 3
           ) AS x
           LEFT JOIN teams t
             ON x.home_team_id=t.id

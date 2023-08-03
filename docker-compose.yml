@@ -25,11 +25,12 @@ services:
     volumes:
       - ./redis:/data
   mysql:
-    image: mysql:debian
+    image: bkkleague_db:latest
     env_file:
       - environment
     volumes:
       - ./mysql/data:/var/lib/mysql
+      - ./dumps:/opt
   phpmyadmin:
     image: phpmyadmin
     env_file:

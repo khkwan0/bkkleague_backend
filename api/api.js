@@ -149,7 +149,7 @@ fastify.get('/user', async (req, reply) => {
 })
 
 fastify.get('/season', (req, reply) => {
-  return {season: 9}
+  return {season: 10}
 })
 
 fastify.get('/venues', async (req, reply) => {
@@ -269,7 +269,7 @@ fastify.get('/season/matches', async (req, reply) => {
   // what we get back from the db query is a flat, one dimensional array
   // of matches, so we have to transform it like above.
   try {
-    const season = req.query?.season ?? 9
+    const season = req.query?.season ?? 10
     const matchGroupingsByDate = await GetMatchesBySeasonCache(season)
     if (matchGroupingsByDate) {
       // determine index for scroll index and unserialize

@@ -10,6 +10,7 @@ services:
     build: ./api
     volumes:
       - ./api:/usr/src/app
+      - ./assets:/usr/src/app/assets
         #  wsclient:
         #    build: ./socketio-client
         #    volumes:

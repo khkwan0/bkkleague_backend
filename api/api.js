@@ -11,6 +11,8 @@ import crypto from 'crypto'
 import {DateTime} from 'luxon'
 import bcrypt from 'bcrypt'
 import countries from './countries.emoji.json' assert {type: 'json'}
+import fs from 'fs'
+import fetch from 'node-fetch'
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
@@ -102,7 +104,8 @@ fastify.get('/', async (req, reply) => {
 fastify.post('/login', async (req, reply) => {
   if (typeof req.body.email && typeof req.body.password) {
     const {email, password} = req.body
-    const res = await HandleLogin(email, password) 
+    fastify.log.info("Login attempt: " + email)
+    const res = await HandleLogin(email, password)
     if (res) {
       const token = await CreateAndSaveSecretKey(res)
       const jwt = fastify.jwt.sign({token: token})
@@ -117,6 +120,75 @@ fastify.post('/login', async (req, reply) => {
       reply.code(401).send()
     }
   } else {
+    reply.code(401).send()
+  }
+})
+
+fastify.post('/login/social/line', async (req, reply) => {
+  try {
+    if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
+      fastify.log.info(req.body.data)
+      const res = await fetch('https://api.line.me/oauth2/v2.1/verify?access_token=' + req.body.data.accessToken.access_token)
+      if (res.status === 200) {
+        const json = await res.json()
+        const profileRaw = await fetch('https://api.line.me/v2/profile', {
+          method: 'GET', 
+          headers: {
+            Authorization: 'Bearer ' + req.body.data.accessToken.access_token,
+          },
+        })
+        const profile = await profileRaw.json()
+        const socialRes = await HandleSocialLogin('line', profile.userId, profile.displayName, profile.pictureUrl)
+        const token = await CreateAndSaveSecretKey(socialRes)
+        const jwt = fastify.jwt.sign({token: token})
+        return {
+          status: 'ok',
+          data: {
+            token: jwt,
+            user: socialRes,
+          }
+        }
+      } else {
+        reply.code(401).send()
+      }
+    } else {
+      reply.code(401).send()
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(401).send()
+  }
+})
+
+fastify.post('/login/social/facebook', async (req, reply) => {
+  try {
+    if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
+      fastify.log.info(req.body.data)
+      const appAccessTokenRes = await fetch('https://graph.facebook.com/oauth/access_token?client_id=' + process.env.FACEBOOK_CLIENT_ID + '&client_secret=' + process.env.FACEBOOK_CLIENT_SECRET + '&grant_type=client_credentials')
+      const appAccessToken = await appAccessTokenRes.json()
+      const res = await fetch('https://graph.facebook.com/debug_token?input_token=' + req.body.data.accessToken + '&access_token=' + appAccessToken.access_token)
+      if (res.status === 200) {
+        const json = await res.json()
+        const profileRes = await fetch('https://graph.facebook.com/v17.0/' + json.data.user_id + '?fields=id,name,email,picture&access_token=' + req.body.data.accessToken)
+        const profile = await profileRes.json()
+        const socialRes = await HandleSocialLogin('facebook', profile.id, profile.name, profile.picture.data.url)
+        const token = await CreateAndSaveSecretKey(socialRes)
+        const jwt = fastify.jwt.sign({token: token})
+        return {
+          status: 'ok',
+          data: {
+            token: jwt,
+            user: socialRes,
+          }
+        }
+      } else {
+        reply.code(401).send()
+      }
+    } else {
+      reply.code(401).send()
+    }
+  } catch (e) {
+    console.log(e)
     reply.code(401).send()
   }
 })
@@ -208,7 +280,7 @@ fastify.get('/matches', async (req, reply) => {
     userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = await GetMatches(userid, newonly)
 
-    // format for season 9 is in php serialized form, convert to json
+    // format for season 10 is in php serialized form, convert to json
     const _res = res.map(match => {
       match.format = JSON.stringify(phpUnserialize(match.format))
       if (typeof match.logo !== 'undefined' && match.logo) {
@@ -520,9 +592,12 @@ fastify.get('/match/:matchId', async (req, reply) => {
 })()
 
 fastify.ready().then(() => {
-  fastify.io.on("connection", socket => {
+  fastify.io.on('connection', socket => {
     fastify.log.info('connection')
 
+    socket.on('disconnect', reason => {
+      fastify.log.info('DISconnection')
+    })
     socket.on('join', (room, cb) => {
       socket.join(room)
       cb({
@@ -701,6 +776,92 @@ async function HandleLogin(email = '', password = '') {
   }
 }
 
+async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
+  try {
+    const res = await GetSocialLogin(provider, userId)
+    
+    // new user
+    if (res.length === 0) {
+      const playerId = await AddPlayerBySocial(provider, userId, displayName, picUrl)
+      if (playerId) {
+        const player = await GetPlayer(playerId)
+        return player
+      } else {
+        throw new Error(`No player id after social add: (${provider} ${userId} ${displayName})`)
+      }
+    } else {
+      const social = res[0]
+      const player = await GetPlayer(social.player_id)
+      return player
+    }
+    return null
+  } catch (e) {
+    fastify.log.error(e.message)
+    return null
+  }
+}
+
+async function AddPlayerBySocial(provider, userId, displayName, picUrl = null) {
+  try {
+    const addRes = {
+    }
+
+    const query0 = `
+      INSERT INTO players (signedup, registered, approved, status_id, role_id, firstname, lastname, nickname, email, email_login, merged_with_id)
+      VALUES(1, 1, 0, 1, 3, ?, ?, ?, ?, 0, 0)
+    `
+    const playerRes = await DoQuery(query0, ['', '', displayName, ''])
+    const playerId = playerRes.insertId
+
+    if (playerId) {
+      if (picUrl) {
+        const filename = await GetAndSaveImage(playerId, provider, userId, picUrl)
+        const updateQuery = `
+          UPDATE players SET profile_picture=? WHERE id=?
+        `
+        const updateRes = await DoQuery(updateQuery, [filename, playerId])
+      }
+      const query1 = `
+        INSERT INTO socialidentities (player_id, provider, social_id)
+        VALUES(?, ?, ?)
+      `
+      const socialidentitiesRes = await DoQuery(query1, [playerId, provider, userId])
+      return playerId
+    }
+    return null
+  } catch (e) {
+    fastify.log(e.message)
+    return null
+  }
+}
+
+async function GetAndSaveImage(playerId, provider, userId, picUrl) {
+  try {
+    const res = await fetch(picUrl)
+    if (res.status === 200) {
+      const contentType = res.headers.get('content-type')
+      let ext = ''
+      if (contentType === 'image/png') {
+        ext = 'png'
+      } else if (contentType === 'image/jpeg') {
+        ext = 'jpg'
+      }
+      if (ext) {
+        const filename = `${playerId}_${provider}_${userId}.${ext}`
+        res.body.pipe(fs.createWriteStream('./assets/profile_pictures/' + filename))
+        return filename
+      } else {
+        fastify.log.error('Unknown content type: GetAndSaveImage')
+        fastify.log.error(JSON.stringify(res.headers, null, 2))
+      }
+    }
+    return null
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
+
 async function GetMatchInfo(matchId) {
   try {
     const key = 'matchinfo_' + matchId
@@ -740,6 +901,21 @@ async function GetFrames(matchId) {
   }
 }
 
+async function GetSocialLogin(provider, userId) {
+  try {
+    const query =` 
+    SELECT *
+      FROM socialidentities
+      WHERE provider=?
+        AND social_id=?
+    `
+    const res = await DoQuery(query, [provider, userId])
+    return res
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
 async function GetVenues() {
   try {
     const key = 'venues'

@@ -105,7 +105,7 @@ fastify.post('/login', async (req, reply) => {
   if (typeof req.body.email && typeof req.body.password) {
     const {email, password} = req.body
     fastify.log.info("Login attempt: " + email)
-    const res = await HandleLogin(email, password)
+    const res = await HandleLogin(email.toLowerCase(), password)
     if (res) {
       const token = await CreateAndSaveSecretKey(res)
       const jwt = fastify.jwt.sign({token: token})
@@ -276,9 +276,9 @@ fastify.get('/matches', async (req, reply) => {
   }
 
   try {
-    const {newonly} = req.query
+    const {newonly, noteam} = req.query
     userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
-    const res = await GetMatches(userid, newonly)
+    const res = await GetMatches(userid, newonly, noteam)
 
     // format for season 10 is in php serialized form, convert to json
     const _res = res.map(match => {
@@ -2008,8 +2008,24 @@ async function GetPlayer(playerId) {
       FROM players
       WHERE id=?
     `
-    const res = await DoQuery(query, [playerId])
-    return res[0]
+    const playerRes = await DoQuery(query, [playerId])
+    let player = null
+    if (typeof playerRes[0] !== 'undefined') {
+      player = playerRes[0]
+      player.teams = []
+      query = `
+				SELECT t.*
+			  FROM players p, players_teams pt, teams t
+				WHERE p.id=?
+				AND p.id=pt.player_id
+				AND t.id=pt.team_id;
+      `
+      const res = await DoQuery(query, [playerId])
+      if (typeof res[0] !== 'undefined') {
+        player.teams = res
+      }
+    }
+    return player
   } catch (e) {
     throw new Error(e)
   }
@@ -2581,13 +2597,13 @@ async function GetMatchesBySeason(season) {
   }
 }
 
-async function GetMatches(userid, newonly) {
+async function GetMatches(userid, newonly, noTeam = false) {
   try {
     const date = new Date()
     const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     let query = ''
     let params = []
-    if (typeof userid !== 'undefined' && userid) {
+    if (typeof userid !== 'undefined' && userid && !noTeam) {
       params.push(parseInt(userid))
       if (typeof newonly !== 'undefined') {
         query = `

@@ -40,7 +40,6 @@ const redisClient = createClient({url: process.env.REDIS_HOST})
 })()
 // let db = null
 
-
 const DoQuery = (queryString, params) => {
   return new Promise((resolve, reject) => {
     mysqlHandle.execute(queryString, params, (err, results, fields) => {
@@ -276,19 +275,47 @@ fastify.get('/matches', async (req, reply) => {
   }
 
   try {
-    const {newonly, noteam} = req.query
+    const {newonly, noteam, completed} = req.query
     userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
-    const res = await GetMatches(userid, newonly, noteam)
+    const res = completed ?
+      await GetMatchesBySeason((await GetCurrentSeason()).id)
+      :
+      await GetUncompletedMatches(userid, newonly, noteam)
 
-    // format for season 10 is in php serialized form, convert to json
-    const _res = res.map(match => {
-      match.format = JSON.stringify(phpUnserialize(match.format))
-      if (typeof match.logo !== 'undefined' && match.logo) {
-        match.logo = 'https://api.bkkleague.com/logos/' + match.logo
-      }
-      return match
-    })
-    return _res
+    // lets group the matches by date for the presentation layer
+    if (completed) {
+      const _matches = {}
+      res.forEach(match => {
+        const matchDateStr = match.date.toISOString()
+        if (typeof _matches[matchDateStr] === 'undefined') {
+          _matches[matchDateStr] = []
+        }
+        const _match = {...match}
+        let score = ''
+        try {
+          score = JSON.stringify(phpUnserialize(match.score))
+        } catch (e) {
+          score = match.score
+        }
+        _match.score = score
+        _matches[matchDateStr].push(_match)
+      })
+      const matches = []
+      Object.keys(_matches).forEach(date => {
+        matches.push({date: date, matches: _matches[date]})
+      })
+      return matches
+    } else {
+      // format for season 10 is in php serialized form, convert to json
+      const _res = res.map(match => {
+        match.format = JSON.stringify(phpUnserialize(match.format))
+        if (typeof match.logo !== 'undefined' && match.logo) {
+          match.logo = 'https://api.bkkleague.com/logos/' + match.logo
+        }
+        return match
+      })
+      return _res
+    }
   } catch (e) {
     console.log(e)
     return []
@@ -575,6 +602,16 @@ fastify.get('/match/:matchId', async (req, reply) => {
   }
 })
 
+fasify.get('/match/details/:matchId', async (req, reply) => {
+  try {
+    const res = await GetMatchDetails(req.params.matchId)
+    return {status: 'ok', data: res}
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'err', msg: 'Server error'})
+  }
+})
+
 ;(async () => {
   try {
     /*
@@ -797,6 +834,15 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
     return null
   } catch (e) {
     fastify.log.error(e.message)
+    return null
+  }
+}
+
+async function GetMatchDetails(matchId) {
+  try {
+    const query = ``
+  } catch (e) {
+    fastify.log(e.message)
     return null
   }
 }
@@ -2581,7 +2627,7 @@ async function GetPlayerByEmail(email) {
 async function GetMatchesBySeason(season) {
   try {
     let query = `
-      SELECT *,away.short_name as away_short_name, home.short_name as home_short_name, divisions.short_name as division_short_name
+      SELECT *, matches.id as matchId, away.short_name as away_short_name, away.short_name as away_team_short_name, home.short_name as home_team_short_name, away.name as away_team_name, home.name as home_team_name, home.short_name as home_short_name, divisions.short_name as division_short_name
       FROM matches, divisions, teams home, teams away, venues
       WHERE matches.division_id=divisions.id
         AND divisions.season_id=?
@@ -2597,15 +2643,19 @@ async function GetMatchesBySeason(season) {
   }
 }
 
-async function GetMatches(userid, newonly, noTeam = false) {
+async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam = true) {
   try {
     const date = new Date()
     const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     let query = ''
     let params = []
+
+    // user is logged in
     if (typeof userid !== 'undefined' && userid && !noTeam) {
       params.push(parseInt(userid))
-      if (typeof newonly !== 'undefined') {
+      if (typeof newonly !== 'undefined' && newonly === true) {
+
+        // get upcoming matches
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
           FROM (
@@ -2630,6 +2680,7 @@ async function GetMatches(userid, newonly, noTeam = false) {
         `
         params.push(today)
       } else {
+        // get all team matches
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
           FROM (
@@ -2652,7 +2703,7 @@ async function GetMatches(userid, newonly, noTeam = false) {
           ORDER BY y.date
         `
       }
-    } else if (typeof newonly !== 'undefined') {
+    } else if (typeof newonly !== 'undefined' && newonly === true) {
       /*
       console.log('newonly, no uid')
       query = `
@@ -2666,6 +2717,8 @@ async function GetMatches(userid, newonly, noTeam = false) {
       const res = await DoQuery(query, [today])
       return res
       */
+
+      // get all upcoming matches for the league
       query = `
         SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
         FROM (
@@ -2688,6 +2741,7 @@ async function GetMatches(userid, newonly, noTeam = false) {
       `
       params.push(today)
     } else {
+      // get all matches that are not completed
       query = `
         SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
         FROM (

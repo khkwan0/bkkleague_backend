@@ -219,17 +219,23 @@ fastify.post('/login/recover', async (req, reply) => {
 
 fastify.post('/login/register', async (req, reply) => {
   try {
+    console.log(req.body)
     if (
       typeof req.body.email !== 'undefined' &&
       req.body.email &&
       typeof req.body.password1 !== 'undefined' &&
       req.body.password1 &&
       typeof req.body.password2 &&
-      req.body.password2
+      req.body.password2 &&
+      typeof req.body.nickname !== 'undefined' &&
+      req.body.nickname
     ) {
       const password1 = req.body.password1.trim()
       const password2 = req.body.password2.trim()
       const email = req.body.email.toLowerCase()
+      const nickname = req.body.nickname.trim()
+      const firstName = req.body.firstName ?? ''
+      const lastName = req.body.lastName ?? ''
       if (password1 !== password2) {
         reply.code(404).send({status: 'error', error: 'password_mismatch'})
       } else {
@@ -238,11 +244,16 @@ fastify.post('/login/register', async (req, reply) => {
           reply.code(403).send({status: 'error', error: 'email_exists'})
         } else {
           console.log('good to register')
-          reply.code(200).send({status: 'ok'})
+          const newPlayerId = await AddNewUser(email, password1, nickname, firstName, lastName)
+          if (newPlayerId) {
+            reply.code(200).send({status: 'ok'})
+          } else {
+            reply.code(500).send({status: 'error', error: 'server_error'})
+          }
         }
       }
     } else {
-      reply.code(404).send({status: 'error', error: 'invalid_paramters'})
+      reply.code(404).send({status: 'error', error: 'invalid_parameters'})
     }
   } catch (e) {
     console.log(e)
@@ -885,6 +896,37 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
   } catch (e) {
     fastify.log.error(e.message)
     return null
+  }
+}
+
+async function AddNewUser(email, password, nickname, firstName, lastName) {
+  try {
+    mysqlHandle.query('START TRANSACTION')
+    const query0 = `
+      INSERT INTO players (signedup, registered, approved, status_id, role_id,  email, email_login, merged_with_id, nickname, firstname, lastname)
+      VALUES(1, 1, 0, 1, 3, ?, 1, 0, ?, ?, ?)
+    `
+    const playerRes = await DoQuery(query0, [email, nickname, firstName, lastName])
+    const playerId = playerRes.insertId
+    if (playerId) {
+      const saltRounds = 10
+      const salt = await bcrypt.genSalt(saltRounds)
+      const hash = await bcrypt.hash(password, salt)
+      const query1 = `
+        INSERT INTO pw (player_id, email, password_hash)
+        VALUES(?, ?, ?)
+      `
+      const pwRes = await DoQuery(query1, [playerId, email, hash])
+      mysqlHandle.query('COMMIT')
+    } else {
+      mysqlHandle.query('ROLLBACK')
+      return null
+    }
+    return playerId
+  } catch (e) {
+    console.log(e)
+    mysqlHandle.query('ROLLBACK')
+    throw new Error(e)
   }
 }
 

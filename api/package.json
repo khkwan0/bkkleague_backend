@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
+    "@fastify/formbody": "^7.4.0",
     "@fastify/jwt": "^6.7.1",
     "async-lock": "^1.4.0",
     "bcrypt": "^5.1.0",

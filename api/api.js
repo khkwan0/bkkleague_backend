@@ -13,10 +13,12 @@ import bcrypt from 'bcrypt'
 import countries from './countries.emoji.json' assert {type: 'json'}
 import fs from 'fs'
 import fetch from 'node-fetch'
+import fastifyFormBody from '@fastify/formbody'
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
-fastify.register(fastifyJWT, {secret: 'kenkwan'})
+fastify.register(fastifyJWT, {secret: process.env.JWT_SECRET})
+fastify.register(fastifyFormBody)
 /*
 const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
@@ -123,6 +125,11 @@ fastify.post('/login', async (req, reply) => {
   }
 })
 
+fastify.post('/delete', async (req, reply) => {
+  console.log(req.body)
+  reply.code(200).send('Request received.  Sorry to see you go.  It may up to 48 hours to process.')
+})
+
 fastify.post('/login/social/line', async (req, reply) => {
   try {
     if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
@@ -199,6 +206,47 @@ fastify.get('/logout', async (req, reply) => {
   } catch (e) {
     fastify.log.error("Invalid JWT")
     reply.code(200).send()
+  }
+})
+
+fastify.post('/login/recover', async (req, reply) => {
+  try {
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/login/register', async (req, reply) => {
+  try {
+    if (
+      typeof req.body.email !== 'undefined' &&
+      req.body.email &&
+      typeof req.body.password1 !== 'undefined' &&
+      req.body.password1 &&
+      typeof req.body.password2 &&
+      req.body.password2
+    ) {
+      const password1 = req.body.password1.trim()
+      const password2 = req.body.password2.trim()
+      const email = req.body.email.toLowerCase()
+      if (password1 !== password2) {
+        reply.code(404).send({status: 'error', error: 'password_mismatch'})
+      } else {
+        const res = await GetUserByEmail(email)
+        if (typeof res !== 'undefined') {
+          reply.code(403).send({status: 'error', error: 'email_exists'})
+        } else {
+          console.log('good to register')
+          reply.code(200).send({status: 'ok'})
+        }
+      }
+    } else {
+      reply.code(404).send({status: 'error', error: 'invalid_paramters'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -602,9 +650,11 @@ fastify.get('/match/:matchId', async (req, reply) => {
   }
 })
 
-fasify.get('/match/details/:matchId', async (req, reply) => {
+fastify.get('/match/details/:matchId', async (req, reply) => {
   try {
+    // this call to GetMatchDetails is the spiritually the same as GetMatchStats
     const res = await GetMatchDetails(req.params.matchId)
+    console.log(JSON.stringify(res, null, 2))
     return {status: 'ok', data: res}
   } catch (e) {
     console.log(e)
@@ -838,11 +888,56 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
   }
 }
 
+// this function (GetMatchDetails) is the spiritually the same as GetMatchStats
 async function GetMatchDetails(matchId) {
   try {
-    const query = ``
+    // let's get frame information for the match
+    const query0 = `
+    SELECT *, pf.id as players_frames_id
+    FROM (
+      SELECT m.id match_id, m.home_team_id home_team_id, m.away_team_id away_team_id, f.id frame_id, f.frame_number frame_number, f.home_win home_win
+      FROM
+        matches m, frames f
+      WHERE
+        m.id=?
+        AND
+        f.match_id=m.id
+    ) as fi, players_frames pf, players p
+    WHERE fi.frame_id=pf.frame_id
+    AND pf.player_id=p.id
+    `
+    const resFrames = await DoQuery(query0, [matchId])
+    const _final = {}
+    resFrames.forEach(frame => {
+      if (typeof _final[frame.frame_id] === 'undefined') {
+        _final[frame.frame_id] = {
+          frameId: frame.frame_id,
+          homeTeamId: frame.home_team_id,
+          awayTeamid: frame.away_team_id,
+          homeWin: frame.home_win,
+          frameNo: frame.frame_number,
+          homePlayers: [],
+          awayPlayers: [],
+        }
+      }
+      const player = {
+        playerId: frame.player_id,
+        nickName: frame.nickname,
+        firstName: frame.firstName,
+        lastName: frame.lastName,
+        playersFramesId: frame.players_frames_id,
+      }
+      if (frame.home_team === 1) {
+        _final[frame.frame_id].homePlayers.push(player)
+      } else {
+        _final[frame.frame_id].awayPlayers.push(player)
+      }
+    })
+
+    const finalFrame = Object.keys(_final).map(key => _final[key])
+    return finalFrame
   } catch (e) {
-    fastify.log(e.message)
+    fastify.log.error(e.message)
     return null
   }
 }

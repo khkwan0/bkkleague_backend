@@ -8,6 +8,8 @@ services:
       - "8081:80"
   api:
     build: ./api
+    env_file:
+      - environment
     volumes:
       - ./api:/usr/src/app
       - ./assets:/usr/src/app/assets

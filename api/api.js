@@ -641,6 +641,19 @@ fastify.post('/player', async (req, reply) => {
   }
 })
 
+fastify.post('/team/player', async (req, reply) => {
+  try {
+    if (typeof req.body.playerId !== 'undefined' && typeof req.body.teamId !== 'undefined' ) {
+      const res = await AddPlayerToTeam(req.body.playerId, req.body.teamId)
+      return {status: 'ok'}
+    } else {
+      return {status: 'error', msg: 'invalid_parameters'}
+    }
+  } catch (e) {
+    return {status: 'error', msg: 'server_error'}
+  }
+})
+
 fastify.get('/frames/:matchId', async (req, reply) => {
   try {
     const res = await GetFrames(req.params.matchId)
@@ -1692,6 +1705,23 @@ async function SaveMatchUpdateHistory(data) {
     return {...toSave}
   } catch (e) {
     console.log(e)
+  }
+}
+
+// add existing player to team
+async function AddPlayerToTeam(playerId, teamId) {
+  try {
+    let query = `
+      INSERT INTO players_teams(team_id, player_id)
+      VALUES(?, ?)
+    `
+    const params2 = [teamId, playerId]
+    const res2 = await DoQuery(query, params2)
+    playersTeamId = res2.insertId
+    return {playerId, playersTeamId}
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
   }
 }
 

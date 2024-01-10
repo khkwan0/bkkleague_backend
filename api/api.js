@@ -708,6 +708,7 @@ fastify.ready().then(() => {
       try {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
         if (ValidateIncoming(data)) {
+          console.log('in', data)
           if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {
@@ -1631,7 +1632,7 @@ async function FormatHistory(_hist) {
       msg: [],
     }
     if (type === 'win') {
-      toReturn.msg.push(`${playerNickname} set WIN frame: ${data.frameNumber}`)
+      toReturn.msg.push(`${playerNickname} set WIN frame: ${data.frameNumber} - side: ${data.side}`)
       return toReturn
     }
     if (type === 'players') {

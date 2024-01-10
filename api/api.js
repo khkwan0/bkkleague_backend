@@ -2187,29 +2187,33 @@ async function GetTeam(teamId) {
 
 async function GetPlayer(playerId) {
   try {
-    let query = `
-      SELECT *
-      FROM players
-      WHERE id=?
-    `
-    const playerRes = await DoQuery(query, [playerId])
-    let player = null
-    if (typeof playerRes[0] !== 'undefined') {
-      player = playerRes[0]
-      player.teams = []
-      query = `
-				SELECT t.*
-			  FROM players p, players_teams pt, teams t
-				WHERE p.id=?
-				AND p.id=pt.player_id
-				AND t.id=pt.team_id;
+    if (typeof playerId !== 'undefined') {
+      let query = `
+        SELECT *
+        FROM players
+        WHERE id=?
       `
-      const res = await DoQuery(query, [playerId])
-      if (typeof res[0] !== 'undefined') {
-        player.teams = res
+      const playerRes = await DoQuery(query, [playerId])
+      let player = null
+      if (typeof playerRes[0] !== 'undefined') {
+        player = playerRes[0]
+        player.teams = []
+        query = `
+          SELECT t.*
+          FROM players p, players_teams pt, teams t
+          WHERE p.id=?
+          AND p.id=pt.player_id
+          AND t.id=pt.team_id;
+        `
+        const res = await DoQuery(query, [playerId])
+        if (typeof res[0] !== 'undefined') {
+          player.teams = res
+        }
       }
+      return player
+    } else {
+      return null
     }
-    return player
   } catch (e) {
     throw new Error(e)
   }

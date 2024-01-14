@@ -269,7 +269,6 @@ fastify.post('/login/recover', async (req, reply) => {
     const rawBytes = await crypto.randomBytes(3)
     const code = rawBytes.toString('hex').toUpperCase()
     await CacheSet(code, req.body.email, 900)
-    /*
     const res = await sendMail({
       from: 'noreply@bkkleague.com',
       to: req.body.email,
@@ -282,9 +281,6 @@ fastify.post('/login/recover', async (req, reply) => {
     } else {
       reply.code(500).send({status: 'error', error: 'server_error'})
     }
-    */
-    reply.code(200).send({status: 'ok'})
-
   } catch (e) {
     console.log(e)
     reply.code(500).send({status: 'error', error: 'server_error'})
@@ -983,6 +979,10 @@ async function HandleLogin(email = '', password = '') {
     const pass = await bcrypt.compare(password, newHash)
     if (pass) {
       const player = await GetPlayer(user.player_id)
+      if (player.merged_with_id !== 0) {
+        player.secondaryId = player.id
+        player.id = player.merged_with_id
+      }
       return player
     } else {
       return null
@@ -1009,6 +1009,10 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
     } else {
       const social = res[0]
       const player = await GetPlayer(social.player_id)
+      if (player.merged_with_id !== 0) {
+        player.secondaryId = player.id
+        player.id = player.merged_with_id
+      }
       return player
     }
     return null
@@ -1024,8 +1028,8 @@ async function UpdatePassword(email, password) {
     const salt = await bcrypt.genSalt(saltRounds)
     const hash = await bcrypt.hash(password, salt)
     const query = `
-      UPDATE players
-      SET password=?
+      UPDATE pw
+      SET password_hash=?
       WHERE email=?
     `
     const res = await DoQuery(query, [hash, email])

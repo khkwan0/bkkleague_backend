@@ -14,6 +14,7 @@ import countries from './countries.emoji.json' assert {type: 'json'}
 import fs from 'fs'
 import fetch from 'node-fetch'
 import fastifyFormBody from '@fastify/formbody'
+import nodemailer from 'nodemailer'
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
@@ -40,7 +41,33 @@ const redisClient = createClient({url: process.env.REDIS_HOST})
   fastify.log.info("Redis HOST: " +  process.env.REDIS_HOST)
   fastify.log.info("Redis is: " + redisClient.isReady ? "Up": "Down")
 })()
-// let db = null
+
+
+const transporter = nodemailer.createTransport({
+  pool: true,
+  host: 'mail.kkith.com',
+  port: 465,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD,
+  },
+  tls: {
+    rejectedUnauthorized: false,
+  }
+})
+
+function sendMail(mail) {
+  return new Promise((resolve, reject) => {
+    transporter.sendMail(mail, (err, info) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(info)
+      }
+    })
+  })
+}
 
 const DoQuery = (queryString, params) => {
   return new Promise((resolve, reject) => {
@@ -64,9 +91,13 @@ async function CacheGet(key) {
   }
 }
 
-async function CacheSet(key, value) {
+async function CacheSet(key, value, ttl= 0) {
   try {
-    await redisClient.set(key, value)
+    if (ttl === 0) {
+      await redisClient.set(key, value)
+    } else {
+      await redisClient.set(key, value, {EX: ttl})
+    }
   } catch(e) {
     console.log(e)
   }
@@ -91,6 +122,30 @@ fastify.decorate("authenticate", async (req, reply) => {
   }
 })
 */
+
+fastify.addHook('preHandler', async (req, reply) => {
+  try {
+    req.verifyJWT()
+    const userid = await GetPlayerIdFromToken(req.user.token)
+    if (userid) {
+      const userData = await GetPlayer(userid)
+      if (typeof userData.role_id !== 'undefined' && userData.role_id === 9) {
+        userData.isAdmin = true
+      } else {
+        userData.isAdmin = false
+      }
+      req.body.user = {...userData}
+    } else {
+      reply.code(400).send({status: 'error', error: 'no session'})
+    }
+  } catch (e) {
+    fastify.log.info('JWT failed')
+    if (req.url.indexOf('/admin') === 0) {
+      reply.code(401).send({status: 'error', error: 'forbidden'})
+    } else {
+    }
+  }
+})
 
 fastify.get('/', async (req, reply) => {
   reply.code(403).send()
@@ -211,6 +266,45 @@ fastify.get('/logout', async (req, reply) => {
 
 fastify.post('/login/recover', async (req, reply) => {
   try {
+    const rawBytes = await crypto.randomBytes(3)
+    const code = rawBytes.toString('hex').toUpperCase()
+    await CacheSet(code, req.body.email, 900)
+    /*
+    const res = await sendMail({
+      from: 'noreply@bkkleague.com',
+      to: req.body.email,
+      subject: 'Reset your password',
+      text: `Reset password verification code: ${code}`,
+      html: `<p>Reset password verification code: ${code}<p>`,
+    })
+    if (typeof res.accepted && res.accepted.length === 1) {
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(500).send({status: 'error', error: 'server_error'})
+    }
+    */
+    reply.code(200).send({status: 'ok'})
+
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/login/recover/verify', async (req, reply) => {
+  try {
+    const code = req.body.code
+    const res = await CacheGet(code)
+    if (typeof res !== 'undefined' && res) {
+      if (req.body.password === req.body.passwordConfirm) {
+        const updateRes = await UpdatePassword(res, req.body.password)
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(405).send({status: 'error', error: 'password_mismatch'})
+      }
+    } else {
+      reply.code(401).send({status: 'error', error: 'invalid_token'})
+    }
   } catch (e) {
     console.log(e)
     reply.code(500).send({status: 'error', error: 'server_error'})
@@ -243,7 +337,6 @@ fastify.post('/login/register', async (req, reply) => {
         if (typeof res !== 'undefined') {
           reply.code(403).send({status: 'error', error: 'email_exists'})
         } else {
-          console.log('good to register')
           const newPlayerId = await AddNewUser(email, password1, nickname, firstName, lastName)
           if (newPlayerId) {
             reply.code(200).send({status: 'ok'})
@@ -823,6 +916,18 @@ fastify.ready().then(() => {
   })
 })
 
+fastify.get('/admin/season/new', (req, reply) => {
+  try {
+    if (req.body.user.isAdmin) {
+      reply.code(200).send({status: 'ok', data: newSeason})
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    reply.code(500).send({status: 'error', error: e.message})
+  }
+})
+
 /* ---------  FINISH FASIFY ------------*/
 
 function ValidateFinalize(home, away) {
@@ -910,6 +1015,23 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
   } catch (e) {
     fastify.log.error(e.message)
     return null
+  }
+}
+
+async function UpdatePassword(email, password) {
+  try {
+    const saltRounds = 10
+    const salt = await bcrypt.genSalt(saltRounds)
+    const hash = await bcrypt.hash(password, salt)
+    const query = `
+      UPDATE players
+      SET password=?
+      WHERE email=?
+    `
+    const res = await DoQuery(query, [hash, email])
+    return res
+  } catch (e) {
+    throw new Error(e)
   }
 }
 
@@ -1298,8 +1420,9 @@ async function GetPlayerStatsInfo(playerId) {
 
 async function GetTeamInfo(teamId) {
   try {
+    console.log(teamId)
     let teamQuery = `
-      SELECT teams.*, divisions.short_name as divison_short_name, divisions.name as division.name, venues.name, venues.logo as venue_logo
+      SELECT teams.*, divisions.short_name as divison_short_name, divisions.name as division_name, venues.name, venues.logo as venue_logo
       FROM teams, divisions, venues
       WHERE teams.id=?
       AND divisions.id=teams.division_id

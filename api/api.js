@@ -180,6 +180,10 @@ fastify.post('/login', async (req, reply) => {
   }
 })
 
+fastify.post('/support', async (req, reply) => {
+  reply.code(200).send('Received.  Thank you.')
+})
+
 fastify.post('/delete', async (req, reply) => {
   console.log(req.body)
   reply.code(200).send('Request received.  Sorry to see you go.  It may up to 48 hours to process.')
@@ -979,10 +983,6 @@ async function HandleLogin(email = '', password = '') {
     const pass = await bcrypt.compare(password, newHash)
     if (pass) {
       const player = await GetPlayer(user.player_id)
-      if (player.merged_with_id !== 0) {
-        player.secondaryId = player.id
-        player.id = player.merged_with_id
-      }
       return player
     } else {
       return null
@@ -1009,10 +1009,6 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
     } else {
       const social = res[0]
       const player = await GetPlayer(social.player_id)
-      if (player.merged_with_id !== 0) {
-        player.secondaryId = player.id
-        player.id = player.merged_with_id
-      }
       return player
     }
     return null
@@ -2354,6 +2350,10 @@ async function GetPlayer(playerId) {
       let player = null
       if (typeof playerRes[0] !== 'undefined') {
         player = playerRes[0]
+        if (player.merged_with_id !== 0) {
+          player.secondaryId = player.id
+          player.id = player.merged_with_id
+        }
         player.teams = []
         query = `
           SELECT t.*
@@ -2362,7 +2362,7 @@ async function GetPlayer(playerId) {
           AND p.id=pt.player_id
           AND t.id=pt.team_id;
         `
-        const res = await DoQuery(query, [playerId])
+        const res = await DoQuery(query, [player.id])
         if (typeof res[0] !== 'undefined') {
           player.teams = res
         }

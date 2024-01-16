@@ -15,6 +15,7 @@ import fs from 'fs'
 import fetch from 'node-fetch'
 import fastifyFormBody from '@fastify/formbody'
 import nodemailer from 'nodemailer'
+import verifyAppleToken from 'verify-apple-id-token'
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
@@ -189,6 +190,20 @@ fastify.post('/delete', async (req, reply) => {
   reply.code(200).send('Request received.  Sorry to see you go.  It may up to 48 hours to process.')
 })
 
+fastify.get('/account/delete', async (req, reply) => {
+  try {
+    await req.jwtVerify()
+    const user = await GetPlayerFromToken(req.user.token)
+    console.log(user)
+    const userId = user.secondaryId ? user.secondaryId : user.playerId
+    SetUserInactive(userId)
+    reply.code(200).send({status: 'ok'})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'invalid_session'})
+  }
+})
+
 fastify.post('/login/social/line', async (req, reply) => {
   try {
     if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
@@ -258,6 +273,51 @@ fastify.post('/login/social/facebook', async (req, reply) => {
   }
 })
 
+
+fastify.post('/login/social/apple', async (req, reply) => {
+  try {
+    if (
+      typeof req.body.data !== 'undefined' &&
+      typeof req.body.data.identityToken !== 'undefined' &&
+      typeof req.body.data.authorizationCode !== 'undefined' &&
+      typeof req.body.data.user !== 'undefined'
+    ) {
+      let firstName = 'unknown'
+      let lastName = 'unknown'
+      if (typeof req?.body?.data?.fullName?.givenName !== 'undefined' && req.body.data.fullName.givenName) {
+        firstName = req.body.data.fullName.givenName
+      }
+      if (typeof req?.body?.data?.fullName?.familyName !== 'undefined' && req.body.data.fullName.familyName) {
+        lastName = req.body.data.fullName.familyName
+      }
+      const appleUserId = req.body.data?.user ?? null
+      const jwtClaims = await verifyAppleToken.default({
+        idToken: req.body.data.identityToken,
+        clientId: 'com.bangkok-pool-league'
+      })
+      if (jwtClaims.sub === appleUserId) {
+        const socialRes = await HandleSocialLogin('apple', appleUserId, firstName + ' ' + lastName, null)
+        const token = await CreateAndSaveSecretKey(socialRes)
+        const jwt = fastify.jwt.sign({token: token})
+        return {
+          status: 'ok',
+          data: {
+            token: jwt,
+            user: socialRes,
+          }
+        }
+      } else {
+        reply.code(401).send({status: 'error', error: 'server_error'})
+      }
+    } else {
+      reply.code(401).send({status: 'error', error: 'server_error'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(401).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/logout', async (req, reply) => {
   try {
     await req.jwtVerify()
@@ -313,7 +373,6 @@ fastify.post('/login/recover/verify', async (req, reply) => {
 
 fastify.post('/login/register', async (req, reply) => {
   try {
-    console.log(req.body)
     if (
       typeof req.body.email !== 'undefined' &&
       req.body.email &&
@@ -2169,6 +2228,7 @@ async function CreateAndSaveSecretKey(player) {
   const token = 'token:' + await GetRandomBytes()
   const toSave = {
     playerId: player.id,
+    secondaryId: player?.secondaryId ?? null,
     timestamp: Date.now()
   }
   await CacheSet(token, JSON.stringify(toSave))
@@ -2206,6 +2266,21 @@ async function GetPlayerIdFromToken(token) {
   }
 }
 
+async function GetPlayerFromToken(token) {
+  try {
+    const res = await CacheGet(token)
+    if (res) {
+      const json = JSON.parse(res)
+      return json ?? null
+    } else {
+      return null
+    }
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
+
 async function GetMatchesBySeasonCache(season) {
   try {
     const key = `allmatches_${season}`
@@ -2220,14 +2295,29 @@ async function GetMatchesBySeasonCache(season) {
   }
 }
 
+async function SetUserInactive(playerId) {
+  try {
+    const query0 = `
+      UPDATE pw
+      SET active=?
+      WHERE player_id=?
+    `
+    const res = await DoQuery(query0, [0, playerId])
+    return res
+  } catch (e) {
+    return {status: 'error', error: 'server_error'}
+  }
+}
+
 async function GetUserByEmail(email) {
   try {
     let query = `
       SELECT *
       FROM pw
       WHERE email=?
+      AND active=?
     `
-    const params = [email]
+    const params = [email, 1]
     const res = await DoQuery(query, params)
     return res[0]
   } catch (e) {

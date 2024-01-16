@@ -173,7 +173,7 @@ fastify.post('/login', async (req, reply) => {
         }
       }
     } else {
-      reply.code(401).send()
+      reply.code(401).send({status: 'error', error: 'invalid_creds'})
     }
   } else {
     reply.code(401).send()
@@ -428,11 +428,14 @@ fastify.get('/matches', async (req, reply) => {
 
   try {
     const {newonly, noteam, completed} = req.query
+    console.log('xxx', typeof newonly, newonly === 'true')
+    const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
+    console.log(_newonly, typeof _newonly)
     userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = completed ?
       await GetMatchesBySeason((await GetCurrentSeason()).id)
       :
-      await GetUncompletedMatches(userid, newonly, noteam)
+      await GetUncompletedMatches(userid, _newonly, noteam)
 
     // lets group the matches by date for the presentation layer
     if (completed) {
@@ -975,15 +978,19 @@ function GenerateToken() {
 async function HandleLogin(email = '', password = '') {
   try {
     const user = await GetUserByEmail(email)
-    const passwordHash = user.password_hash
+    if (typeof user !== 'undefined') {
+      const passwordHash = user.password_hash
 
-    // for old bcrypt algorithms backward compatibility
-    const newHash = passwordHash.match(/^\$2y/) ? passwordHash.replace("$2y", "$2a") : passwordHash
-    
-    const pass = await bcrypt.compare(password, newHash)
-    if (pass) {
-      const player = await GetPlayer(user.player_id)
-      return player
+      // for old bcrypt algorithms backward compatibility
+      const newHash = passwordHash.match(/^\$2y/) ? passwordHash.replace("$2y", "$2a") : passwordHash
+      
+      const pass = await bcrypt.compare(password, newHash)
+      if (pass) {
+        const player = await GetPlayer(user.player_id)
+        return player
+      } else {
+        return null
+      }
     } else {
       return null
     }
@@ -2949,6 +2956,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
     let query = ''
     let params = []
 
+    console.log(userid, noTeam, newonly, typeof newonly)
     // user is logged in
     if (typeof userid !== 'undefined' && userid && !noTeam) {
       params.push(parseInt(userid))
@@ -3039,6 +3047,8 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
         ORDER BY y.date
       `
       params.push(today)
+      const res = await DoQuery(query, params)
+      return res
     } else {
       // get all matches that are not completed
       query = `

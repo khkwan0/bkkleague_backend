@@ -126,7 +126,7 @@ fastify.decorate("authenticate", async (req, reply) => {
 
 fastify.addHook('preHandler', async (req, reply) => {
   try {
-    req.verifyJWT()
+    await req.jwtVerify()
     const userid = await GetPlayerIdFromToken(req.user.token)
     if (userid) {
       const userData = await GetPlayer(userid)
@@ -135,11 +135,12 @@ fastify.addHook('preHandler', async (req, reply) => {
       } else {
         userData.isAdmin = false
       }
-      req.body.user = {...userData}
+      req.user.user = {...userData}
     } else {
       reply.code(400).send({status: 'error', error: 'no session'})
     }
   } catch (e) {
+    console.log(e)
     fastify.log.info('JWT failed')
     if (req.url.indexOf('/admin') === 0) {
       reply.code(401).send({status: 'error', error: 'forbidden'})
@@ -430,8 +431,46 @@ fastify.get('/user', async (req, reply) => {
   }
 })
 
-fastify.get('/season', (req, reply) => {
-  return {season: 10}
+fastify.get('/season', async (req, reply) => {
+  try {
+    const res = await GetActiveSeason()
+    reply.code(200).send({season: res[0].id})
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/v2/season', async (req, reply) => {
+  try {
+    const res = await GetActiveSeason()
+    reply.code(200).send(res)
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/seasons', async (req, reply) => {
+  try {
+    const res = await GetAllSeasons()
+    reply.code(200).send({status: 'ok', data: res})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/venues/all', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      const res = await GetAllVenues()
+      return {status: 'ok', data: res}
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send()
+  }
 })
 
 fastify.get('/venues', async (req, reply) => {
@@ -443,10 +482,48 @@ fastify.get('/venues', async (req, reply) => {
   }
 })
 
+fastify.post('/venue', async (req, reply) => {
+  try {
+    if (
+      typeof req.body.venue.name !== 'undefined' &&
+      typeof req.body.venue.location !== 'undefined' &&
+      req.body.venue.name && req.body.venue.location
+    ) {
+      const res = await SaveVenue(req.body.venue)
+      reply.code(200).send(res)
+    } else {
+      reply.code(400).send({status: 'err', error: 'invalid_parameters'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'err', error: 'server_error'}) 
+  }
+})
+
 fastify.get('/teams', async (req, reply) => {
   try {
     const res = await GetTeams()
     return res
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/teams/:season', async (req, reply) => {
+  try {
+    const season = req.params.season ?? null
+    const res = await GetTeams(season)
+    return {status: 'ok', data: res}
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/divisions/:season', async (req, reply) => {
+  try {
+    const season = req.params.season ?? null
+    const res = await GetDivisions(season)
+    return {status: 'ok', data: res}
   } catch (e) {
     reply.code(500).send() 
   }
@@ -809,6 +886,18 @@ fastify.post('/team/player', async (req, reply) => {
   }
 })
 
+fastify.get('/team/division/:season', async (req, reply) => {
+  try {
+    if (typeof req.params.season !== 'undefined' && req.params.season) {
+      const season = parseInt(req.params.season, 10)
+      const res = await GetTeamDivisionBySeason(season)
+      reply.code(200).send({status: 'ok', data: res})
+    }
+  } catch (e) {
+    return {status: 'error', msg: 'server_error'}
+  }
+})
+
 fastify.get('/frames/:matchId', async (req, reply) => {
   try {
     const res = await GetFrames(req.params.matchId)
@@ -978,15 +1067,134 @@ fastify.ready().then(() => {
   })
 })
 
-fastify.get('/admin/season/new', (req, reply) => {
+fastify.post('/admin/season/new', async (req, reply) => {
   try {
-    if (req.body.user.isAdmin) {
-      reply.code(200).send({status: 'ok', data: newSeason})
+    if (req.user.user.isAdmin) {
+      const {name, shortName, description} = req.body
+      if (name && shortName) {
+        const res = await SaveNewSeason(name, shortName, description)
+        reply.code(200).send(res)
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_parameters'})
+      }
     } else {
       reply.code(403).send({status: 'error', error: 'unauthorized'})
     }
   } catch (e) {
     reply.code(500).send({status: 'error', error: e.message})
+  }
+})
+
+fastify.post('/admin/migrate', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      if (req.body.newSeason && req.body.oldSeason) {
+        const newSeason = req.body.newSeason
+        const oldSeason = req.body.oldSeason
+        const query = `
+          SELECT *
+          FROM teams_transitions
+          WHERE new_season_id=?
+        `
+        const res = await DoQuery(query, [newSeason])
+        if (res.length > 0) {
+          reply.code(400).send({status: 'error', error: 'season_exists'})
+        } else {
+          await MigrateTeams(oldSeason, newSeason)
+          reply.code(200).send({status: 'ok'})
+        }
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    reply.code(500).send({status: 'error', error: e.message})
+  }
+})
+
+fastify.get('/admin/teams/:season', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      const season = req.params.season ?? null
+      if (season) {
+        const _season = parseInt(season, 10)
+        if (_season > 10) {
+          const res = await GetAdminTeams(_season)
+          return {status: 'ok', data: res}
+        } else {
+          const res = await GetTeams(_season)
+          return {status: 'ok', data: res}
+        }
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.get('/admin/season/activate/:season', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      const season = req.params.season ?? null
+      if (season) {
+        const _seasonId = parseInt(season, 10)
+        const res = await SetActiveSeason(_seasonId)
+        return {status: 'ok', data: res}
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    reply.code(500).send() 
+  }
+})
+
+fastify.post('/admin/team/division', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      const teamId = req.body.teamId ?? null
+      const divisionId = req.body.divisionId ?? null
+      if (teamId && divisionId) {
+        const res = await SetTeamDivision(teamId, divisionId)
+        return {status: 'ok', data: res}
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
+  }
+})
+
+fastify.post('/admin/team', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      if (
+        typeof req.body.name !== 'undefined' &&
+        req.body.name &&
+        typeof req.body.venue !== 'undefined' &&
+        req.body.venue
+      ) {
+        const res = await AddNewTeam(req.body.name, req.body.venue)
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
   }
 })
 
@@ -1286,6 +1494,61 @@ async function GetFrames(matchId) {
   }
 }
 
+async function GetActiveSeason() {
+  try {
+    const query = `
+      SELECT *
+      FROM seasons
+      WHERE status_id=1
+    `
+    const res = await DoQuery(query, [])
+    return res
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function SaveNewSeason(name = '', shortName = '', description = '') {
+  try {
+    if (name && shortName) {
+      let query = `
+        INSERT INTO seasons (name, short_name, description)
+        VALUES (?, ?, ?)
+      `
+      const res = await DoQuery(query, [name, shortName, description])
+      const insertId = res.insertId
+      query = `
+        UPDATE seasons
+        SET sortorder=?, identifier=?
+        WHERE id=?
+      `
+      const res2 = await DoQuery(query, [insertId, insertId.toString(), insertId])
+      return {status: 'ok'}
+    } else {
+      return {status: 'error', error: 'invalid_parameters'}
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error({status: 'error', error: 'server_error'})
+  }
+}
+
+async function GetAllSeasons() {
+  try {
+    const query = `
+      SELECT *
+      FROM seasons
+      ORDER BY id DESC
+    `
+    const res = await DoQuery(query, [])
+    return res
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetSocialLogin(provider, userId) {
   try {
     const query =` 
@@ -1301,6 +1564,36 @@ async function GetSocialLogin(provider, userId) {
     return null
   }
 }
+
+async function SaveVenue(venue) {
+  try {
+    const q0 = `
+      INSERT INTO venues(name, short_name, location, phone, latitude, longitude, website, email, plus)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    const r0 = await DoQuery(q0, Object.keys(venue).map(key => venue[key]))
+    return {status: 'ok'}
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetAllVenues() {
+  try {
+    const q0 = `
+      SELECT *
+      FROM venues
+      ORDER BY name
+    `
+    const r0 = await DoQuery(q0, [])
+    return r0
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetVenues() {
   try {
     const key = 'venues'
@@ -1484,9 +1777,29 @@ async function GetPlayerStatsInfo(playerId) {
   }
 }
 
+async function AddNewTeam(name, venueId) {
+  try {
+    const seasonId = (await GetCurrentSeason()).id
+    const q0 =  `
+      INSERT INTO teams(name, short_name, very_short_name, division_id, venue_id, season_id)
+      VALUES(?, ?, ?, ?, ?, ?)
+    `
+    const r0 = await DoQuery(q0, [name, '', '', 0, venueId, seasonId])
+    const insertId = r0.insertId
+    const q1 =  `
+      INSERT INTO teams_transitions(old_team_id, new_team_id, new_season_id)
+      VALUES(?, ?, ?)
+    `
+    const r1 = await DoQuery(q1, [0, insertId, seasonId])
+    return r1
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetTeamInfo(teamId) {
   try {
-    console.log(teamId)
     let teamQuery = `
       SELECT teams.*, divisions.short_name as divison_short_name, divisions.name as division_name, venues.name, venues.logo as venue_logo
       FROM teams, divisions, venues
@@ -1507,29 +1820,200 @@ async function GetTeamInfo(teamId) {
   }
 }
 
-async function GetTeams() {
+async function MigrateTeams(oldSeason = 0, newSeason = 0) {
   try {
-    const key = 'teams'
-    const res = await CacheGet(key)
+    if (oldSeason && newSeason && newSeason > oldSeason) {
+      const query0 = `
+        SELECT *
+        FROM teams_transitions
+        WHERE new_season_id=?
+      `
+      const res0 = await DoQuery(query0, [oldSeason])
+      let i = 0
+      while (i < res0.length) {
+        try {
+        const row = res0[i]
+        if (row.new_team_id) {
+            const query1 = `
+              SELECT * 
+              FROM teams
+              WHERE id=?
+            `
+            const res1 = await DoQuery(query1, [row.new_team_id])
+            const oldTeam = res1[0]
+            const query2 = `
+              INSERT INTO teams(name, short_name, very_short_name, division_id, venue_id, status_id, line_groupid_team, advantage, fee_paid, season_id)
+              VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `
+            const res2 = await DoQuery(query2, [oldTeam.name, oldTeam.short_name, oldTeam.very_short_name, 0, oldTeam.venue_id, 1, oldTeam.line_groupid_team, 0, 0, newSeason])
+            const newTeamId = res2.insertId
+            const query3 = `
+              INSERT INTO teams_transitions(old_team_id, new_team_id, new_season_id)
+              VALUES(?, ?, ?)
+            `
+            const res3 = await DoQuery(query3, [oldTeam.id, newTeamId, newSeason])
+          }
+        } catch (e) {
+          console.log(e)
+        }
+        i++
+      }
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetTeamDivisionBySeason(season) {
+  try {
+    const q0 = `
+      SELECT teams.name as name, divisions.name as division_name, divisions.id as division_id, teams.id as team_id
+      FROM teams, divisions 
+      WHERE teams.division_id=divisions.id
+      AND divisions.season_id=?
+    `
+    const r0 = await DoQuery(q0, [season])
+    return r0
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function SetTeamDivision(teamId, divisionId) {
+  try {
+    const q0 = `
+      UPDATE teams
+      SET division_id=?
+      WHERE id=?
+    `
+    const r1 = await DoQuery(q0, [divisionId, teamId])
+    return r1
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function SetActiveSeason(seasonId) {
+  try {
+    const q0 = `
+      UPDATE seasons
+      SET status_id=5
+    `
+    const r0 = await DoQuery(q0, [])
+    const q1 = `
+      UPDATE seasons
+      SET status_id=1
+      WHERE id=?
+    `
+    const r1 = await DoQuery(q1, [seasonId])
+    return r1
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetDivisions(season = null, useCache = false) {
+  try {
+    const key = 'divisions'
+    const res = useCache ? await CacheGet(key) : false
     if (res) {
       return JSON.parse(res)
     } else {
-      let query = `
-        SELECT teams.*, divisions.name as division_name, divisions.short_name as division_short_name, venues.logo as venue_logo
-        FROM teams, divisions, venues
-        WHERE division_id IN (
-          SELECT id AS division_id
-          FROM divisions WHERE season_id=(
-            SELECT id
-            FROM seasons
-            WHERE status_id=1
+      const _season = parseInt(season, 10)
+      if (_season > 10) {
+        let divisions = []
+        if (season) {
+          const query = `
+            SELECT divisions.name as name, divisions.id as id, conference.name as conference_name, league.name as league_name 
+            FROM divisions, conference, league
+            WHERE season_id=?
+            AND divisions.conference=conference.id
+            AND conference.league=league.id
+          `
+          const res = DoQuery(query, [season])
+          return res
+        }
+        return divisions
+      } else {
+        let divisions = []
+        if (season) {
+          const query = `
+            SELECT *
+            FROM divisions
+            WHERE season_id=?
+          `
+          const res = DoQuery(query, [season])
+          return res
+        }
+        return divisions
+      }
+    }
+  } catch (e) {
+    console.log(e)
+  }
+}
+
+// teams without division data
+async function GetAdminTeams(season) {
+  try {
+    const query = `
+      SELECT * 
+      FROM teams
+      WHERE season_id=?
+      ORDER BY name ASC
+    `
+    const res = await DoQuery(query, [season])
+    return res
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetTeams(season = null, useCache = false) {
+  try {
+    const key = 'teams'
+    const res = useCache ? await CacheGet(key) : false
+    if (res) {
+      return JSON.parse(res)
+    } else {
+      let query = null
+      let teams = []
+      if (season) {
+        query = `
+          SELECT teams.*, divisions.name as division_name, divisions.short_name as division_short_name, venues.logo as venue_logo
+          FROM teams, divisions, venues
+          WHERE division_id IN (
+            SELECT id AS division_id
+            FROM divisions WHERE season_id=?
           )
-        )
-        AND teams.division_id=divisions.id
-        AND venues.id=teams.venue_id
-        ORDER BY teams.short_name
-      `
-      const teams = await DoQuery(query, [])
+          AND teams.division_id=divisions.id
+          AND venues.id=teams.venue_id
+          ORDER BY teams.short_name
+        `
+        teams = await DoQuery(query, [season])
+      } else {
+        query = `
+          SELECT teams.*, divisions.name as division_name, divisions.short_name as division_short_name, venues.logo as venue_logo
+          FROM teams, divisions, venues
+          WHERE division_id IN (
+            SELECT id AS division_id
+            FROM divisions WHERE season_id=(
+              SELECT id
+              FROM seasons
+              WHERE status_id=1
+            )
+          )
+          AND teams.division_id=divisions.id
+          AND venues.id=teams.venue_id
+          ORDER BY teams.short_name
+        `
+        teams = await DoQuery(query, [])
+      }
       let i = 0
       while (i < teams.length) {
         const {players, captains, assistants} = await GetPlayersByTeamId(teams[i].id)
@@ -2446,10 +2930,17 @@ async function GetPlayer(playerId) {
       const playerRes = await DoQuery(query, [playerId])
       let player = null
       if (typeof playerRes[0] !== 'undefined') {
-        player = playerRes[0]
-        if (player.merged_with_id !== 0) {
-          player.secondaryId = player.id
-          player.id = player.merged_with_id
+        if (playerRes[0].merged_with_id !== 0) {
+          query = `
+            SELECT *
+            FROM players
+            WHERE id=?
+          `
+          const originalPlayerRes = await DoQuery(query, [playerRes[0].merged_with_id])
+          player = originalPlayerRes[0]
+          player.secondaryId = playerRes[0].id
+        } else {
+          player = playerRes[0]
         }
         player.teams = []
         query = `

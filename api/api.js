@@ -140,7 +140,6 @@ fastify.addHook('preHandler', async (req, reply) => {
       reply.code(400).send({status: 'error', error: 'no session'})
     }
   } catch (e) {
-    console.log(e)
     fastify.log.info('JWT failed')
     if (req.url.indexOf('/admin') === 0) {
       reply.code(401).send({status: 'error', error: 'forbidden'})
@@ -552,6 +551,40 @@ fastify.get('/game/types', async (req, reply) => {
   }
 })
 
+fastify.get('/matches/completed/season/:season', async (req, reply) => {
+  try {
+    const season = req.params.season
+    if (typeof season !== 'undefined' && season) {
+      const _season = parseInt(season, 10)
+      const res = await GetMatchesBySeason(season)
+      const _matches = {}
+      res.forEach(match => {
+        const matchDateStr = match.date.toISOString()
+        if (typeof _matches[matchDateStr] === 'undefined') {
+          _matches[matchDateStr] = []
+        }
+        const _match = {...match}
+        let score = ''
+        try {
+          score = JSON.stringify(phpUnserialize(match.score))
+        } catch (e) {
+          score = match.score
+        }
+        _match.score = score
+        _matches[matchDateStr].push(_match)
+      })
+      const matches = []
+      Object.keys(_matches).forEach(date => {
+        matches.push({date: date, matches: _matches[date]})
+      })
+      reply.code(200).send({status: 'ok', data: matches})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/matches', async (req, reply) => {
   let userid = null
   let verifiedJWT = false
@@ -564,9 +597,7 @@ fastify.get('/matches', async (req, reply) => {
 
   try {
     const {newonly, noteam, completed} = req.query
-    console.log('xxx', typeof newonly, newonly === 'true')
     const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
-    console.log(_newonly, typeof _newonly)
     userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = completed ?
       await GetMatchesBySeason((await GetCurrentSeason()).id)

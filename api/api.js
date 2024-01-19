@@ -1854,6 +1854,8 @@ async function GetTeamInfo(teamId) {
 async function MigrateTeams(oldSeason = 0, newSeason = 0) {
   try {
     if (oldSeason && newSeason && newSeason > oldSeason) {
+
+      // get teams from last season
       const query0 = `
         SELECT *
         FROM teams_transitions
@@ -1861,10 +1863,12 @@ async function MigrateTeams(oldSeason = 0, newSeason = 0) {
       `
       const res0 = await DoQuery(query0, [oldSeason])
       let i = 0
+
+      // copy the old teams into teams
       while (i < res0.length) {
         try {
-        const row = res0[i]
-        if (row.new_team_id) {
+          const row = res0[i]
+          if (row.new_team_id) {
             const query1 = `
               SELECT * 
               FROM teams
@@ -1889,6 +1893,44 @@ async function MigrateTeams(oldSeason = 0, newSeason = 0) {
         }
         i++
       }
+
+      // move the players too -- this is untested
+      // this was written AFTER the team migration was written just above
+      // 2024-01-19 - ken
+      const q3 = `
+        SELECT old_team_id, new_team_id
+        FROM teams_transitions
+        WHERE new_season_id=?
+      `
+      const r3 = await DoQuery(q3, [newSeason])
+      i = 0
+      while (i < r3.length) {
+        try {
+          const row = r3[i]
+          // get the players from the old team
+          const q4 = `
+            SELECT *
+            FROM players_teams
+            WHERE team_id=?
+          `
+          const r4 = await DoQuery(q4, [row.old_team_id])
+          let j = 0
+          while (j < r4.length) {
+            const player = r4[j]
+            const q5 = `
+              INSERT INTO players_teams(team_id, player_id, team_role_id)
+              VALUES(?, ?, ?)
+            `
+            const r5 = await DoQuery(q5, [player.team_id, player.player_id, player.team_role_id])
+            j++
+          }
+
+        } catch (e) {
+          console.log(e)
+        }
+        i++
+      }
+
     }
   } catch (e) {
     console.log(e)

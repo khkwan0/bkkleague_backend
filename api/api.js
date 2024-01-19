@@ -1854,7 +1854,6 @@ async function GetTeamInfo(teamId) {
 async function MigrateTeams(oldSeason = 0, newSeason = 0) {
   try {
     if (oldSeason && newSeason && newSeason > oldSeason) {
-
       // get teams from last season
       const query0 = `
         SELECT *
@@ -1921,7 +1920,7 @@ async function MigrateTeams(oldSeason = 0, newSeason = 0) {
               INSERT INTO players_teams(team_id, player_id, team_role_id)
               VALUES(?, ?, ?)
             `
-            const r5 = await DoQuery(q5, [player.team_id, player.player_id, player.team_role_id])
+            const r5 = await DoQuery(q5, [row.new_team_id, player.player_id, player.team_role_id])
             j++
           }
 

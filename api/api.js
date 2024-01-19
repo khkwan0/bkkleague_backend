@@ -204,6 +204,84 @@ fastify.get('/account/delete', async (req, reply) => {
   }
 })
 
+fastify.post('/account/last_name', async (req, reply) => {
+  try {
+    const name = req.body.name
+    if (typeof name !== 'undefined' && name) {
+      const user = await GetPlayerFromToken(req.user.token)
+      const playerId = user.playerId ?? null
+      if (playerId) {
+        const q0 = `
+          UPDATE players
+          SET lastname=?
+          WHERE id=?
+        `
+        const r0 = await DoQuery(q0, [name, playerId])
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(500).send({status: 'error', error: 'invalid_session'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/account/first_name', async (req, reply) => {
+  try {
+    const name = req.body.name
+    if (typeof name !== 'undefined' && name) {
+      const user = await GetPlayerFromToken(req.user.token)
+      const playerId = user.playerId ?? null
+      if (playerId) {
+        const q0 = `
+          UPDATE players
+          SET firstname=?
+          WHERE id=?
+        `
+        const r0 = await DoQuery(q0, [name, playerId])
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(500).send({status: 'error', error: 'invalid_session'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/account/nick_name', async (req, reply) => {
+  try {
+    const name = req.body.name
+    if (typeof name !== 'undefined' && name) {
+      const user = await GetPlayerFromToken(req.user.token)
+      const playerId = user.playerId ?? null
+      if (playerId) {
+        const q0 = `
+          UPDATE players
+          SET nickname=?
+          WHERE id=?
+        `
+        const r0 = await DoQuery(q0, [name, playerId])
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(500).send({status: 'error', error: 'invalid_session'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.post('/login/social/line', async (req, reply) => {
   try {
     if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
@@ -1318,6 +1396,7 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
     }
     return null
   } catch (e) {
+    console.log(e)
     fastify.log.error(e.message)
     return null
   }
@@ -1454,8 +1533,9 @@ async function AddPlayerBySocial(provider, userId, displayName, picUrl = null) {
     }
     return null
   } catch (e) {
-    fastify.log(e.message)
-    return null
+    console.log(e)
+    fastify.log.error(e.message)
+    throw new Error(e)
   }
 }
 
@@ -1728,6 +1808,15 @@ async function GetPlayerInfo(playerId) {
       en: player.cn_en,
       th: player.cn_th,
     }
+
+    query = `
+      SELECT id
+      FROM players
+      WHERE merged_with_id=?
+    `
+    const altIds = await DoQuery(query, [playerId])
+    player.altIds = altIds
+
     query = `
       SELECT t.short_name
       FROM players_teams pt, teams t
@@ -3002,6 +3091,7 @@ async function GetPlayer(playerId) {
       const playerRes = await DoQuery(query, [playerId])
       let player = null
       if (typeof playerRes[0] !== 'undefined') {
+        const seasonId = (await GetCurrentSeason()).id
         if (playerRes[0].merged_with_id !== 0) {
           query = `
             SELECT *
@@ -3014,15 +3104,25 @@ async function GetPlayer(playerId) {
         } else {
           player = playerRes[0]
         }
+
+        query = `
+          SELECT id
+          FROM players
+          WHERE merged_with_id=?
+        `
+        const altIds = await DoQuery(query, [player.id])
+        player.altIds = altIds
+
         player.teams = []
         query = `
-          SELECT t.*
+          SELECT t.*, pt.team_role_id
           FROM players p, players_teams pt, teams t
           WHERE p.id=?
+          AND t.season_id=?
           AND p.id=pt.player_id
           AND t.id=pt.team_id;
         `
-        const res = await DoQuery(query, [player.id])
+        const res = await DoQuery(query, [player.id, seasonId])
         if (typeof res[0] !== 'undefined') {
           player.teams = res
         }
@@ -3032,6 +3132,7 @@ async function GetPlayer(playerId) {
       return null
     }
   } catch (e) {
+    console.log(e)
     throw new Error(e)
   }
 }

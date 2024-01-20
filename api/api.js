@@ -1043,7 +1043,40 @@ fastify.post('/player', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    return {status: 'err', msg: 'Server error'}
+    reply.code(500).send({status: 'err', msg: 'Server error', error: 'server_error'})
+  }
+})
+
+fastify.post('/team/player/remove', async (req, reply) => {
+  const teamId = req.body.teamId
+  const playerId = req.body.playerId
+  try {
+    if (
+      typeof teamId !== 'undefined' &&
+      teamId &&
+      typeof playerId !== 'undefined' &&
+      playerId &&
+      teamId !== req.user.user.id
+    ) {
+      const team_role_id = await GetTeamRoleId(req.user.user.id, teamId)
+      if (req.user.user.isAdmin || team_role_id > 0) {
+        const q0 = `
+          UPDATE players_teams
+          SET active=0
+          WHERE team_id=?
+          AND player_id=?
+        `
+        const r0 = await DoQuery(q0, [teamId, playerId])
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(401).send({status: 'error', error: 'unauthorized'})
+      }
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'err', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -1832,14 +1865,24 @@ async function GetVenues() {
   }
 }
 
-async function GetPlayersByTeamId(teamId) {
+async function GetPlayersByTeamId(teamId, active = true) {
   try {
     let query = `
       SELECT players.*, players_teams.team_role_id as team_role_id
       FROM players_teams, players
       WHERE players_teams.team_id=?
+      AND players_teams.active=1
       AND players_teams.player_id=players.id
     `
+
+    if (!active) {
+      query = `
+        SELECT players.*, players_teams.team_role_id as team_role_id
+        FROM players_teams, players
+        WHERE players_teams.team_id=?
+        AND players_teams.player_id=players.id
+      `
+    }
     const _players = await DoQuery(query, [teamId])
     const captains = []
     const assistants = []
@@ -2711,13 +2754,12 @@ async function AddPlayerToTeam(playerId, teamId) {
         return null
       } else {
         let query = `
-          INSERT INTO players_teams(team_id, player_id)
-          VALUES(?, ?)
+          INSERT INTO players_teams(team_id, player_id, active)
+          VALUES(?, ?, 1)
         `
         const params2 = [teamId, playerId]
         const res2 = await DoQuery(query, params2)
         const playersTeamId = res2.insertId
-        console.log(res2)
         return {playerId, playersTeamId}
       }
     } else {

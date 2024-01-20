@@ -1413,7 +1413,7 @@ async function GetTeamRoleId(userId, teamId) {
       AND team_id=?
     `
     const r0 = await DoQuery(q0, [userId, teamId])
-    return r0[0].team_role_id
+    return r0[0]?.team_role_id ?? 0
   } catch (e) {
     console.log(e)
     throw new Error(e)

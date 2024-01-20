@@ -706,9 +706,13 @@ fastify.get('/matches', async (req, reply) => {
       })
       return matches
     } else {
+      const currentSeason = (await GetCurrentSeason()).id
       // format for season 10 is in php serialized form, convert to json
       const _res = res.map(match => {
-        match.format = JSON.stringify(phpUnserialize(match.format))
+        if (currentSeason > 10) {
+        } else {
+          match.format = JSON.stringify(phpUnserialize(match.format))
+        }
         if (typeof match.logo !== 'undefined' && match.logo) {
           match.logo = 'https://api.bkkleague.com/logos/' + match.logo
         }
@@ -3937,11 +3941,11 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
     let query = ''
     let params = []
 
-    console.log(userid, noTeam, newonly, typeof newonly)
     // user is logged in
-    if (typeof userid !== 'undefined' && userid && !noTeam) {
+    if (typeof userid !== 'undefined' && userid && noTeam === 'false') {
       params.push(parseInt(userid))
       if (typeof newonly !== 'undefined' && newonly === true) {
+        console.log('here')
 
         // get upcoming matches
         query = `

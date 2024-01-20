@@ -866,6 +866,61 @@ fastify.get('/player/stats/info/:playerId', async (req, reply) => {
   }
 })
 
+fastify.post('/player/privilege/grant', async (req, reply) => {
+  const teamId = req.body.teamId ?? null
+  const targetPlayer = req.body.playerId ?? null
+  const level = req.body.level
+  try {
+    if (teamId && targetPlayer && level > 0) {
+      const team_role_id = await GetTeamRoleId(req.user.user.id, teamId)
+      if (req.user.user.isAdmin || team_role_id === 2) {
+        const q0 = `
+          UPDATE players_teams
+          SET team_role_id=?
+          WHERE player_id=?
+          AND team_id=?
+        `
+        const r0 = await DoQuery(q0, [level, targetPlayer, teamId])
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(401).send({status: 'error', error: 'unauthorized'})
+      }
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/player/privilege/revoke', async (req, reply) => {
+  const teamId = req.body.teamId ?? null
+  const targetPlayer = req.body.playerId ?? null
+  try {
+    if (teamId && targetPlayer) {
+      const team_role_id = await GetTeamRoleId(req.user.user.id, teamId)
+      if (req.user.user.isAdmin || team_role_id === 2) {
+        const q0 = `
+          UPDATE players_teams
+          SET team_role_id=0
+          WHERE player_id=?
+          AND team_id=?
+        `
+        const r0 = await DoQuery(q0, [targetPlayer, teamId])
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(401).send({status: 'error', error: 'unauthorized'})
+      }
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/players', async (req, reply) => {
   try {
     const {teamid, active_only} = req.query
@@ -881,6 +936,16 @@ fastify.get('/players', async (req, reply) => {
   } catch (e) {
     console.log(e)
     return []
+  }
+})
+
+fastify.get('/players/unique', async (req, reply) => {
+  try {
+    const res = await GetAllUniquePlayers()
+    reply.code(200).send({status: 'ok', data: res})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -988,10 +1053,10 @@ fastify.post('/team/player', async (req, reply) => {
       const res = await AddPlayerToTeam(req.body.playerId, req.body.teamId)
       return {status: 'ok'}
     } else {
-      return {status: 'error', msg: 'invalid_parameters'}
+      return {status: 'error', msg: 'invalid_parameters', error: 'invalid_parameters'}
     }
   } catch (e) {
-    return {status: 'error', msg: 'server_error'}
+    return {status: 'error', msg: 'server_error', error: 'server_error'}
   }
 })
 
@@ -1337,6 +1402,22 @@ function ValidateFinalize(home, away) {
 // Make sure only members with correct secret tokens can validate
 function ValidateIncoming(data) {
   return true
+}
+
+async function GetTeamRoleId(userId, teamId) {
+  try {
+    const q0 = `
+      SELECT team_role_id
+      FROM players_teams
+      WHERE player_id=?
+      AND team_id=?
+    `
+    const r0 = await DoQuery(q0, [userId, teamId])
+    return r0[0].team_role_id
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
 }
 
 function GenerateToken() {
@@ -1707,8 +1788,9 @@ async function GetAllVenues() {
 
 async function GetVenues() {
   try {
+    const currentSeason = (await GetCurrentSeason()).id
     const key = 'venues'
-    const res = await CacheGet(key)
+    const res = null //await CacheGet(key)
     if (res) {
       return JSON.parse(res)
     } else {
@@ -1722,16 +1804,9 @@ async function GetVenues() {
       query = `
         SELECT *
         FROM teams
-        WHERE division_id IN (
-          SELECT id AS division_id
-          FROM divisions WHERE season_id=(
-            SELECT id
-            FROM seasons
-            WHERE status_id=1
-          )
-        )
+        WHERE season_id=?
       `
-      const teams = await DoQuery(query, [])
+      const teams = await DoQuery(query, [currentSeason])
       let i = 0
       while (i < allVenues.length) {
         const venue = allVenues[i]
@@ -1890,6 +1965,19 @@ async function GetPlayerStatsInfo(playerId) {
       player.seasons[frame.season][team.name] += frame.cnt
       player.total += frame.cnt
     })
+    player.currentTeams = []
+    const q0 = `
+      SELECT t.*, pt.team_role_id
+      FROM players p, players_teams pt, teams t
+      WHERE p.id=?
+      AND t.season_id=?
+      AND p.id=pt.player_id
+      AND t.id=pt.team_id;
+    `
+    const r0 = await DoQuery(q0, [playerId, currentSeason])
+    if (typeof r0[0] !== 'undefined') {
+      player.currentTeams = r0
+    }
     return player
   } catch (e) {
     console.log(e)
@@ -2545,14 +2633,31 @@ async function SaveMatchUpdateHistory(data) {
 // add existing player to team
 async function AddPlayerToTeam(playerId, teamId) {
   try {
-    let query = `
-      INSERT INTO players_teams(team_id, player_id)
-      VALUES(?, ?)
+    const q0 = `
+      SELECT count(*) as count
+      FROM players_teams
+      WHERE team_id=?
+      AND player_id=?
     `
-    const params2 = [teamId, playerId]
-    const res2 = await DoQuery(query, params2)
-    playersTeamId = res2.insertId
-    return {playerId, playersTeamId}
+    const r0 = await DoQuery(q0, [teamId, playerId])
+    console.log(r0)
+    if (r0 && r0.length > 0) {
+      if (r0[0].count > 0) {
+        return null
+      } else {
+        let query = `
+          INSERT INTO players_teams(team_id, player_id)
+          VALUES(?, ?)
+        `
+        const params2 = [teamId, playerId]
+        const res2 = await DoQuery(query, params2)
+        const playersTeamId = res2.insertId
+        console.log(res2)
+        return {playerId, playersTeamId}
+      }
+    } else {
+      return
+    }
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -3511,6 +3616,21 @@ async function GetPlayerStats(playerId) {
   } catch(e) {
     console.log(e)
     return {}
+  }
+}
+
+async function GetAllUniquePlayers() {
+  try {
+    const q0 = `
+      SELECT *
+      FROM players
+      WHERE merged_with_id=0
+    `
+    const r0 = await DoQuery(q0, [])
+    return r0
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
   }
 }
 

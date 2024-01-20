@@ -1835,11 +1835,10 @@ async function GetVenues() {
 async function GetPlayersByTeamId(teamId) {
   try {
     let query = `
-      SELECT players.*, players_teams.team_role_id as team_role_id, countries.iso_3166_1_alpha_2_code as country_code
-      FROM players_teams, players, countries
+      SELECT players.*, players_teams.team_role_id as team_role_id
+      FROM players_teams, players
       WHERE players_teams.team_id=?
       AND players_teams.player_id=players.id
-      AND countries.id=players.nationality_id
     `
     const _players = await DoQuery(query, [teamId])
     const captains = []
@@ -1847,7 +1846,17 @@ async function GetPlayersByTeamId(teamId) {
     const players = []
     let j = 0
     while (j < _players.length) {
-      _players[j].flag = countries[_players[j].country_code]?.emoji ?? ''
+      const q0 = `
+        SELECT countries.iso_3166_1_alpha_2_code as country_code
+        FROM countries
+        WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [_players[j].nationality_id])
+      let flag = ''
+      if (r0.length > 0) {
+        flag = countries[r0[0].country_code]?.emoji
+      }
+      _players[j].flag = flag
       if (_players[j].team_role_id === 0) {
         players.push(_players[j])
       } else if (_players[j].team_role_id === 1) {
@@ -1911,62 +1920,118 @@ async function GetPlayerStatsInfo(playerId) {
   try {
     const currentSeason = (await GetCurrentSeason()).id
     let query = `
-      SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, countries.iso_3166_1_alpha_2_code country, countries.name_en cn_en, countries.name_th cn_th, players.gender_id gender, players.language lang, players.profile_picture pic, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt
-      FROM players_frames, players, frames, matches, divisions, seasons, countries
+      SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, players.gender_id gender, players.language lang, players.profile_picture pic, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt, players.nationality_id as nationality
+      FROM players_frames, players, frames, matches, divisions, seasons
       WHERE players_frames.player_id=?
         AND players_frames.frame_id=frames.id
         AND frames.match_id=matches.id
         AND matches.division_id=divisions.id
         AND divisions.season_id=seasons.id
         AND players.id=?
-        AND players.nationality_id=countries.id
-      GROUP BY is_home, player_name, firstname, lastname, country, p_id, division, htid, atid, season, s_id  
+      GROUP BY is_home, player_name, firstname, lastname, p_id, division, htid, atid, season, s_id  
       ORDER BY s_id DESC, division DESC
     `
     const _frames = await DoQuery(query, [playerId, playerId])
 
-    query = `SELECT * FROM teams`
-    const _teams = await DoQuery(query, [])
-    const teams = {}
-    _teams.forEach(team => teams[team.id] = team)
-
     const player = {}
-    _frames.forEach(frame => {
-      if (typeof player.player_id === 'undefined') {
-        player.lastSeason = frame.s_id
-        player.flag = countries[frame.country]?.emoji ?? ''
-        player.nationality = {
-          en: frame.cn_en,
-          th: frame.cn_th,
+    if (_frames.length > 0) {
+      const q0 = `
+        SELECT countries.iso_3166_1_alpha_2_code country, countries.name_en cn_en, countries.name_th cn_th
+        FROM countries
+        WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [_frames[0].nationality])
+
+      query = `SELECT * FROM teams`
+      const _teams = await DoQuery(query, [])
+      const teams = {}
+      _teams.forEach(team => teams[team.id] = team)
+
+      _frames.forEach(frame => {
+        if (typeof player.player_id === 'undefined') {
+          player.lastSeason = frame.s_id
+          player.flag = r0.length > 0 ? countries[r0[0].nationality]?.emoji : ''
+          if (r0.length > 0) {
+            player.nationality = {
+              en: r0[0].cn_en,
+              th: r0[0].cn_th,
+            }
+          } else {
+            player.nationality = {
+              en: '',
+              th: '',
+            }
+          }
+          player.pic = frame.pic
+          player.gender = frame.gender === 2 ? 'Male' : frame.gender === 1 ? 'Female' : 'Other'
+          player.language = frame.lang
+          player.player_id = frame.p_id
+          player.firstname = frame.firstname
+          player.lastname = frame.lastname
+          player.name = frame.player_name
+          player.total = 0
+          player.teams = []
+          player.seasons = {}
         }
-        player.pic = frame.pic
-        player.gender = frame.gender === 2 ? 'Male' : frame.gender === 1 ? 'Female' : 'Other'
-        player.language = frame.lang
-        player.player_id = frame.p_id
-        player.firstname = frame.firstname
-        player.lastname = frame.lastname
-        player.name = frame.player_name
-        player.total = 0
+        if (typeof player.seasons[frame.season] === 'undefined') {
+          player.seasons[frame.season] = {}
+        }
+        const team = frame.is_home ? teams[frame.htid] : teams[frame.atid]
+        if (frame.s_id === currentSeason) {
+          if (!player.teams.includes(team.short_name)) {
+            player.teams.push(team.short_name)
+          }
+        }
+        if (typeof player.seasons[frame.season][team.name] === 'undefined') {
+          player.seasons[frame.season][team.name] = 0
+        }
+        player.seasons[frame.season][team.name] += frame.cnt
+        player.total += frame.cnt
+      })
+    } else {
+      const q0 = `
+        SELECT *
+        FROM players
+        WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [playerId])
+      if (r0.length > 0) {
+        const res = r0[0]
+        player.player_id = res.id
+        player.lastSeason = -1
+        if (res.nationality_id) {
+          const q1 = `
+            SELECT countries.iso_3166_1_alpha_2_code country, countries.name_en cn_en, countries.name_th cn_th
+            FROM countries
+            WHERE id=?
+          `
+          const r1 = await DoQuery(q1, [res.nationality_id])
+          player.flag = r1.length > 0 ? countries[r1[0].nationality]?.emoji : ''
+          if (r1.length > 0) {
+            player.nationality = {
+              en: r1[0].cn_en,
+              th: r1[0].cn_th,
+            }
+          } else {
+            player.nationality = {
+              en: '',
+              th: '',
+            }
+          }
+        }
+        player.pic = res.pic
+        player.gender = res.gender === 2 ? 'Male' : res.gender === 1 ? 'Female' : 'Other'
+        player.language = res.lang
+        player.firstname = res.firstname
+        player.lastname = res.lastname
+        player.name = res.nickname
         player.teams = []
+        player.total = 0
         player.seasons = {}
       }
-      if (typeof player.seasons[frame.season] === 'undefined') {
-        player.seasons[frame.season] = {}
-      }
-      const team = frame.is_home ? teams[frame.htid] : teams[frame.atid]
-      if (frame.s_id === currentSeason) {
-        if (!player.teams.includes(team.short_name)) {
-          player.teams.push(team.short_name)
-        }
-      }
-      if (typeof player.seasons[frame.season][team.name] === 'undefined') {
-        player.seasons[frame.season][team.name] = 0
-      }
-      player.seasons[frame.season][team.name] += frame.cnt
-      player.total += frame.cnt
-    })
+    }
     player.currentTeams = []
-    const q0 = `
+    const q1 = `
       SELECT t.*, pt.team_role_id
       FROM players p, players_teams pt, teams t
       WHERE p.id=?
@@ -1974,9 +2039,9 @@ async function GetPlayerStatsInfo(playerId) {
       AND p.id=pt.player_id
       AND t.id=pt.team_id;
     `
-    const r0 = await DoQuery(q0, [playerId, currentSeason])
-    if (typeof r0[0] !== 'undefined') {
-      player.currentTeams = r0
+    const r1 = await DoQuery(q1, [playerId, currentSeason])
+    if (typeof r1[0] !== 'undefined') {
+      player.currentTeams = r1
     }
     return player
   } catch (e) {

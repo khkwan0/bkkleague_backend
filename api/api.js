@@ -928,12 +928,12 @@ fastify.post('/player/privilege/revoke', async (req, reply) => {
 fastify.get('/players', async (req, reply) => {
   try {
     const {teamid, active_only} = req.query
+    const activeOnly = active_only === 'true' ? true : false
     if (typeof teamid !== 'undefined' && teamid) {
       const _teamid = parseInt(teamid)
-      const res = await GetPlayersByTeamIdFlat(_teamid) 
+      const res = await GetPlayersByTeamIdFlat(_teamid, activeOnly) 
       return res
     } else {
-      const activeOnly = active_only === 'true' ? true : false
       const res = await GetAllPlayers(activeOnly)
       return res
     }
@@ -1043,11 +1043,26 @@ fastify.post('/player', async (req, reply) => {
       const _res = await SaveNewPlayer(req.body)
       return {status: 'ok', data: {playerId: _res.playerId}}
     } else {
-      return {status: 'err', msg: 'Nickname is too short'}
+      return {status: 'error', msg: 'Nickname is too short', error: 'nickname_too_short'}
     }
   } catch (e) {
     console.log(e)
     reply.code(500).send({status: 'err', msg: 'Server error', error: 'server_error'})
+  }
+})
+
+fastify.get('/playersteam/players', async (req, reply) => {
+  const teamId = req.query.teamid
+  try {
+    if (typeof teamId !== 'undefined' && teamId) {
+      const res = await GetRoster(teamId)
+      reply.code(200).send({status: 'ok', data: res})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -1863,6 +1878,23 @@ async function GetVenues() {
       await CacheSet(key, JSON.stringify(allVenues))
       return allVenues
     }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetRoster(teamId) {
+  try {
+    const q0 = `
+      SELECT p.*, p.id as playerId
+      FROM players p, players_teams pt
+      WHERE pt.team_id=?
+      AND p.id=pt.player_id
+      AND pt.active=1
+    `
+    const r0 = await DoQuery(q0, [teamId])
+    return r0
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -3877,7 +3909,25 @@ async function GetGameTypes() {
   }
 }
 
-async function GetPlayersByTeamIdFlat(teamId) {
+async function GetPlayersTeamPlayers(activeOnly = true) {
+  try {
+    const currentSeason = (await GetCurrentSeason()).id
+    let q0 = `
+      SELECT p.*
+      FROM players p, players_teams pt
+      WHERE pt.player_id = p.id
+      AND pt.season_id=?
+      AND pt.active=1
+    `
+    const r0 = await DoQuery(q0, [currentSeason])
+    return r0
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetPlayersByTeamIdFlat(teamId, activeOnly = false) {
   try {
     let query = `
       SELECT
@@ -3891,6 +3941,21 @@ async function GetPlayersByTeamIdFlat(teamId) {
       AND pt.player_id=p.id
       ORDER BY nickname
     `
+    if (activeOnly) {
+      query = `
+        SELECT
+          p.id as playerId,
+          p.nickname as nickname,
+          p.firstName as firstName,
+          p.lastName as lastName,
+          p.profile_picture as avatar
+        FROM players_teams pt, players p
+        WHERE team_id=?
+        AND pt.player_id=p.id
+        AND pt.active=1
+        ORDER BY nickname
+      `
+    }
     let params=[teamId]
     const res = await DoQuery(query, params)
     return res
@@ -3945,8 +4010,6 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
     if (typeof userid !== 'undefined' && userid && noTeam === 'false') {
       params.push(parseInt(userid))
       if (typeof newonly !== 'undefined' && newonly === true) {
-        console.log('here')
-
         // get upcoming matches
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name

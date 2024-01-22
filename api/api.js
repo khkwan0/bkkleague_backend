@@ -2238,10 +2238,10 @@ async function MigrateTeams(oldSeason = 0, newSeason = 0) {
           while (j < r4.length) {
             const player = r4[j]
             const q5 = `
-              INSERT INTO players_teams(team_id, player_id, team_role_id)
-              VALUES(?, ?, ?)
+              INSERT INTO players_teams(team_id, player_id, team_role_id, season_id)
+              VALUES(?, ?, ?, ?)
             `
-            const r5 = await DoQuery(q5, [row.new_team_id, player.player_id, player.team_role_id])
+            const r5 = await DoQuery(q5, [row.new_team_id, player.player_id, player.team_role_id, newSeason])
             j++
           }
 
@@ -2777,6 +2777,7 @@ async function SaveMatchUpdateHistory(data) {
 // add existing player to team
 async function AddPlayerToTeam(playerId, teamId) {
   try {
+    const currentSeason = (await GetCurrentSeason()).id
     const q0 = `
       SELECT count(*) as count
       FROM players_teams
@@ -2784,16 +2785,15 @@ async function AddPlayerToTeam(playerId, teamId) {
       AND player_id=?
     `
     const r0 = await DoQuery(q0, [teamId, playerId])
-    console.log(r0)
     if (r0 && r0.length > 0) {
       if (r0[0].count > 0) {
         return null
       } else {
         let query = `
-          INSERT INTO players_teams(team_id, player_id, active)
-          VALUES(?, ?, 1)
+          INSERT INTO players_teams(team_id, player_id, active, season_id)
+          VALUES(?, ?, 1, ?)
         `
-        const params2 = [teamId, playerId]
+        const params2 = [teamId, playerId, currentSeason]
         const res2 = await DoQuery(query, params2)
         const playersTeamId = res2.insertId
         return {playerId, playersTeamId}
@@ -2809,6 +2809,7 @@ async function AddPlayerToTeam(playerId, teamId) {
 
 async function SaveNewPlayer(newPlayer) {
   try {
+    const currentSeason = (await GetCurrentSeason()).id
     const {nickName, firstName, lastName, email, teamId} = newPlayer
     let query = `
       INSERT INTO players (nickname, firstname, lastname, email, merged_with_id)
@@ -2820,10 +2821,10 @@ async function SaveNewPlayer(newPlayer) {
     let playersTeamId = 0
     if (typeof teamId !== 'undefined' && teamId) {
       query = `
-        INSERT INTO players_teams(team_id, player_id)
-        values(?, ?)
+        INSERT INTO players_teams(team_id, player_id, season_id)
+        values(?, ?, ?)
       `
-      const params2 = [teamId, playerId]
+      const params2 = [teamId, playerId, currentSeason]
       const res2 = await DoQuery(query, params2)
       playersTeamId = res2.insertId
     }
@@ -3368,7 +3369,8 @@ async function GetPlayer(playerId) {
           WHERE p.id=?
           AND t.season_id=?
           AND p.id=pt.player_id
-          AND t.id=pt.team_id;
+          AND t.id=pt.team_id
+          AND pt.active=1
         `
         const res = await DoQuery(query, [player.id, seasonId])
         if (typeof res[0] !== 'undefined') {

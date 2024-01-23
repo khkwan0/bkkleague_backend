@@ -11,3 +11,5 @@ html/
 *.xlsx
 out.json
 *.log
+dumps/
+crons/

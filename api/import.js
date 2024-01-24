@@ -70,7 +70,7 @@ async function main() {
           INSERT INTO matches(type_id, division_id, tournament_id, home_team_id, away_team_id, date, round, status_id, start_time, end_time, owner_id, score, match_format)
           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
-//        const r0 = await DoQuery(q0, [1, div, 0, home_team_id, away_team_id, date, rounds[div], 1, '00:00:00', '00:00:00', 0, '', ''])
+        const r0 = await DoQuery(q0, [1, div, 0, home_team_id, away_team_id, date, rounds[div], 1, '00:00:00', '00:00:00', 0, '', ''])
         console.log(q0)
         home_team_id = 0
         away_team_id = 0

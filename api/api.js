@@ -3070,13 +3070,24 @@ async function FinalizeMatch(matchId) {
           }
         }
       })
-      let home_points = 0
-      let away_points = 0
-      if (home_frames > away_frames) {
-        home_points++
-      } else {
-        away_points++
-      }
+
+      // calculate points
+
+      // first get points per game from db
+      const q0 = `
+        SELECT mp.points_per_win as win_points, mp.points_per_tie as tie_points, mp.points_per_loss as loss_points
+        FROM matches m, divisions d, match_points mp
+        WHERE m.id=?
+        AND m.division_id=d.id
+        AND mp.game_type=d.game_type
+      `
+      const r0 = await DoQuery(q0, [matchId])
+      const win_points = r0.length === 1 ? r0[0].win_points : 1
+      const tie_points = r0.length === 1 ? r0[0].tie_points : 1
+      const loss_points = r0.length === 1 ? r0[0].loss_points : 0
+
+      const home_points = home_frames > away_frames ? win_points : home_frames === away_frames ? tie_points : loss_points
+      const away_points = home_frames < away_frames ? win_points : home_frames === away_frames ? tie_points : loss_points
       
       let comments = {
         notes: '',

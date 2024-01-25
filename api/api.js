@@ -1441,6 +1441,56 @@ fastify.post('/admin/team', async (req, reply) => {
   }
 })
 
+fastify.post('/admin/match/completed', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      if (
+        typeof req.body.type !== 'undefined' && req.body.type &&
+        typeof req.body.matchId !== 'undefined' && req.body.matchId &&
+        typeof req.body.data !== 'undefined' && req.body.data
+      ) {
+        const matchId = req.body.matchId
+        if (req.body.type === 'break' && typeof req.body?.data?.home_team_first_break !== 'undefined') {
+          const q0 = `
+            UPDATE matches
+            SET first_break_home_team=?
+            WHERE id=?
+          `
+          const r0 = await DoQuery(q0, [req.body.data.home_team_first_break, matchId])
+          const data = {
+            playerId: req.user.user.id,
+            timestamp: Date.now(),
+            data: {
+              admin: true,
+              type: 'firstbreak',
+              timestamp: Date.now(),
+              playerId: req.user.user.id,
+              nickname: req.user.user.nickname,
+              dest: '',
+              matchId: matchId,
+              data: {
+                firstBreak: req.body.data.home_team_first_break,
+              },
+            }
+          }
+          await UpdateCompletedMatchHistory(matchId, data)
+          reply.code(200).send({status: 'ok'})
+        } else {
+          reply.code(400).send({status: 'error', error: 'invalid_params'})
+        }
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
+  }
+})
+
+
 /* ---------  FINISH FASIFY ------------*/
 
 function ValidateFinalize(home, away) {
@@ -2553,7 +2603,7 @@ async function GetTeamStats(_seasonId = null) {
       try {
         _match.score = _match.score ? phpUnserialize(_match.score) : _match.score
       } catch (e) {
-        _match.score = _match.score ? JSON.parsJSON.parsee(_match.score) : _match.score
+        _match.score = _match.score ? JSON.parsJSON.parse(_match.score) : _match.score
       }
       _stats[match.home_team_id].points += match.home_points
       _stats[match.away_team_id].points += match.away_points
@@ -2778,6 +2828,34 @@ async function UnfinalizeSide(matchId, side = '') {
   }
 }
 
+async function UpdateCompletedMatchHistory(matchId, data) {
+  try {
+    const q0 = `
+      SELECT comments
+      FROM matches
+      WHERE id=?
+    `
+    const r0 = await DoQuery(q0, [matchId])
+    const rawComments = r0?.[0]?.comments ?? null
+    if (rawComments) {
+      const comments = JSON.parse(rawComments)
+      if (typeof comments.history === 'undefined') {
+        comments.history = []
+      }
+      comments.history.push(data)
+      const q1 = `
+        UPDATE matches
+        SET comments=?
+        WHERE id=?
+      `
+      const r1 = await DoQuery(q1, [JSON.stringify(comments), matchId])
+      return r1
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
 async function SaveMatchUpdateHistory(data) {
   try {
     const matchId = data.data?.matchId ?? data.matchId

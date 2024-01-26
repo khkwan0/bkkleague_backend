@@ -1257,11 +1257,9 @@ fastify.ready().then(() => {
                   const matchInfo = await GetMatchInfo(data.matchId)
                   const {finalize_home, finalize_away} = matchInfo
                   fastify.io.to(room).emit('match_update', data)
-                  /*
                   if (ValidateFinalize(finalize_home, finalize_away)) {
                     FinalizeMatch(data.matchId)
                   }
-                  */
                 }
 
                 if (data.type === 'unfinalize') {
@@ -2083,6 +2081,7 @@ async function GetPlayersByTeamId(teamId, active = true) {
       `
     }
     const _players = await DoQuery(query, [teamId])
+
     const captains = []
     const assistants = []
     const players = []
@@ -2999,6 +2998,7 @@ async function AddPlayerToTeam(playerId, teamId) {
       FROM players_teams
       WHERE team_id=?
       AND player_id=?
+      AND active=1
     `
     const r0 = await DoQuery(q0, [teamId, playerId])
     if (r0 && r0.length > 0) {
@@ -4274,6 +4274,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
                 AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
                 AND m.division_id=d.id
                 AND m.status_id != 3
+                AND pt.active = 1
             ) AS x
             LEFT JOIN teams t
               ON x.home_team_id=t.id

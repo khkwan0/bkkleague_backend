@@ -4,6 +4,7 @@ import fastifyJWT from '@fastify/jwt'
 // import {MongoClient} from 'mongodb'
 import * as dotenv from 'dotenv'
 import * as mysql from 'mysql2'
+import * as mysqlp from 'mysql2/promise'
 import phpUnserialize from 'phpunserialize'
 import AsyncLock from 'async-lock'
 import {createClient} from 'redis'
@@ -30,6 +31,14 @@ const mongoClient = new MongoClient(mongoUri)
 const lock = new AsyncLock()
 
 const mysqlHandle = mysql.createPool({
+  host: process.env.MYSQL_HOST,
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DB,
+})
+
+// promisified
+const mysqlHandlep = mysqlp.createPool({
   host: process.env.MYSQL_HOST,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
@@ -80,6 +89,13 @@ const DoQuery = (queryString, params) => {
       }
     })
   })
+}
+
+async function DoQuery2(queryString, params) {
+  const conn = await mysqlHandle.getConnection()
+  const res = mysqlHandle.query(queryString, params)
+  conn.release()
+  return res
 }
 
 async function CacheGet(key) {
@@ -1475,6 +1491,86 @@ fastify.post('/admin/match/completed', async (req, reply) => {
           }
           await UpdateCompletedMatchHistory(matchId, data)
           reply.code(200).send({status: 'ok'})
+        } else if (req.body.type === 'win') {
+          const connection = await mysqlHandlep.getConnection()
+          try {
+            const key = 'matchinfo_' + matchId
+            await lock.acquire(key, async () => {
+              await connection.beginTransaction()
+              const q0 = `
+                SELECT m.*, mp.points_per_win, mp.points_per_tie, mp.points_per_loss
+                FROM matches m, divisions d, match_points mp
+                WHERE m.id=?
+                AND m.division_id=d.id
+                AND d.game_type=mp.game_type
+                AND d.season_id=mp.season
+              `
+              const [r0, r0Fields] = await connection.execute(q0, [matchId])
+              if (Array.isArray(r0) && r0.length === 1) {
+                let home_frames = r0[0].home_frames
+                let away_frames = r0[0].away_frames
+                if (req.body.data.homeWin === 1) {
+                  home_frames++
+                  away_frames--
+                } else {
+                  home_frames--
+                  away_frames++
+                }
+                let home_points = 0
+                let away_points = 0
+                if (home_frames > away_frames) {
+                    home_points = r0[0].points_per_win
+                    away_points = r0[0].points_per_loss
+                } else if (home_frames < away_frames) {
+                  away_points = r0[0].points_per_win
+                  home_points = r0[0].points_per_loss
+                } else if (home_frames === away_frames) {
+                  home_points = r0[0].points_per_tie
+                  away_points = r0[0].points_per_tie
+                }
+
+                const q1 = `
+                  UPDATE matches
+                  SET home_frames=?, away_frames=?, home_points=?, away_points=?
+                  WHERE id=?
+                `
+                const [r1, r1Fields] = await connection.execute(q1, [home_frames, away_frames, home_points, away_points, matchId])
+
+                const q2 = `
+                  UPDATE frames
+                  SET home_win=?
+                  WHERE id=?
+                `
+                const [r2, r2Fields] = await connection.execute(q2, [req.body.data.homeWin, req.body.data.frameId])
+
+                for (const playersFrame of req.body.data.homePlayers) {
+                  const q3 = `
+                    UPDATE players_frames
+                    SET home_team=?
+                    WHERE id=?
+                  `
+                  const [r3, r3Fields] = await connection.execute(q3, [req.body.data.homeWin, playersFrame.playersFramesId])
+                }
+
+                for (const playersFrame of req.body.data.awayPlayers) {
+                  const q4 = `
+                    UPDATE players_frames
+                    SET home_team=?
+                    WHERE id=?
+                  `
+                  const [r4, r4Fields] = await connection.execute(q4, [req.body.data.homeWin === 0 ? 1 : 0, playersFrame.playersFramesId])
+                }
+                fastify.log.info('COMMIT')
+                await connection.commit()
+              }
+            })
+          } catch (e) {
+            fastify.log.info('ROLLBACK', e)
+            await connection.rollback()
+          } finally {
+            fastify.log.info('CONNECTION RELEASED')
+            connection.release()
+          }
         } else {
           reply.code(400).send({status: 'error', error: 'invalid_params'})
         }
@@ -2643,13 +2739,18 @@ async function GetStandings(_seasonId = null) {
     `
     const rawStandings = await DoQuery(query, [seasonId])
     const _standings = {}
+
     rawStandings.forEach(stat => {
+
+      // create the division groups
       if (typeof _standings[stat.division_name] === 'undefined') {
         _standings[stat.division_name] = {
           division: stat.division_name,
           teams: {}
         }
       }
+
+      // create the team in the division
       if (typeof _standings[stat.division_name].teams[stat.id] === 'undefined') {
         _standings[stat.division_name].teams[stat.id] = {
           name: stat.team_name,
@@ -2659,7 +2760,11 @@ async function GetStandings(_seasonId = null) {
           matches: []
         }
       }
+
+      // computer games played
       _standings[stat.division_name].teams[stat.id].played++
+
+      // add stats
       if (stat.id === stat.home_team_id) {
         _standings[stat.division_name].teams[stat.id].points += stat.home_points
         _standings[stat.division_name].teams[stat.id].frames += stat.home_frames
@@ -2688,7 +2793,7 @@ async function GetStandings(_seasonId = null) {
     const standings = __standings.map(division => {
       const _division = {...division}
       _division.teams = Object.keys(division.teams).map(team => division.teams[team])
-      _division.teams.sort((a, b) => b.points - a.points)
+      _division.teams.sort((a, b) => b.points - a.points || b.frames - a.frames)
       return _division
     })
     return standings

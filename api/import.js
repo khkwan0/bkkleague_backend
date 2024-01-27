@@ -26,7 +26,7 @@ const DoQuery = (queryString, params) => {
 
 async function main() {
   const res = excelToJson({
-    sourceFile: process.argv[2]
+    sourceFile: process.argv[3]
   })
   const fixtures = res.Sheet1
   let i = 0
@@ -41,7 +41,7 @@ async function main() {
     }
 
     if (typeof rounds[div] === 'undefined') {
-      rounds[div] = 1 
+      rounds[div] =  process.argv[2]
     } else {
       rounds[div] = rounds[div] + 1
     }

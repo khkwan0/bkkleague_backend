@@ -508,6 +508,52 @@ fastify.post('/login/register', async (req, reply) => {
   }
 })
 
+fastify.get('/users/merge/:currentId/:targetId', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const playerId = parseInt(req.params.currentId, 10)
+    const targetId = parseInt(req.params.targetId, 10)
+    if (userId !== playerId) {
+      reply.code(400).send({status: 'error', error: 'user mismatch'})
+    } else {
+      const q0 = `
+        SELECT *
+        FROM merge_requests
+        WHERE player_id=?
+        AND target_player_id=?
+      `
+      const r0 = await DoQuery(q0, [playerId, targetId])
+
+      if (r0.length === 0) {
+        const q1 = `
+          INSERT into merge_requests(player_id, target_player_id)
+          VALUES(?, ?)
+        `
+        const r1 = await DoQuery(q1, [playerId, targetId])
+      }
+      reply.code(200).send({status: 'ok'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.get('/users/mergerequest/count', async (req, reply) => {
+  try {
+    const q0 = `
+      SELECT count(*) as count
+      FROM merge_requests
+      WHERE status=0
+    `
+    const r0 = await DoQuery(q0, [])
+    reply.code(200).send({status: 'ok', data: r0[0].count})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/user', async (req, reply) => {
   try {
     await req.jwtVerify()
@@ -1612,6 +1658,86 @@ fastify.post('/admin/login', async (req, reply) => {
     } else {
       reply.code(401).send()
     }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
+  }
+})
+
+fastify.get('/admin/mergerequests', async (req, reply) => {
+  try {
+    const q0 = `
+      SELECT mrs.*, p.nickname as player_nickname
+      FROM (
+        SELECT mr.id as merge_request_id, p.id as target_id, p.nickname as target_name, mr.player_id as player_id, mr.created_at as created_at
+        FROM merge_requests mr, players p
+        WHERE (mr.status=0 OR mr.status=1)
+        AND p.id=mr.target_player_id
+      ) as mrs, players p
+      WHERE mrs.player_id=p.id
+    `
+    const r0 = await DoQuery(q0, [])
+
+    const q1 = `
+      UPDATE merge_requests
+      SET status=1
+      WHERE status=0
+    `
+    const r1 = await DoQuery(q1, [])
+    reply.code(200).send({status: 'ok', data: r0})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
+  }
+})
+
+fastify.get('/admin/mergerequest/accept/:requestId', async (req, reply) => {
+  try {
+    const requestId = parseInt(req.params.requestId, 10)
+    const q0 = `
+      SELECT *
+      FROM merge_requests
+      WHERE id=?
+    `
+    const r0 = await DoQuery(q0, [requestId])
+    console.log(r0)
+
+    if (r0.length === 1) {
+      const playerId = r0[0].player_id
+      const targetId = r0[0].target_player_id
+      const q1 = `
+        UPDATE players
+        SET merged_with_id=?
+        WHERE id=?
+      `
+      const r1 = await DoQuery(q1, [targetId, playerId])
+      
+      const q2 = `
+        UPDATE merge_requests
+        SET status=2
+        WHERE id=?
+      `
+      const r2 = await DoQuery(q2, [requestId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(404).send({status: 'error', error: 'id not found'})
+    }
+  } catch(e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'}) 
+  }
+})
+
+fastify.get('/admin/mergerequest/deny/:requestId', async (req, reply) => {
+  try {
+    const requestId = parseInt(req.params.requestId, 10)
+    const q0 = `
+      UPDATE merge_requests
+      SET status=3
+      WHERE id=?
+    `
+    const r0 = await DoQuery(q0, [requestId])
+    reply.code(200).send()
   } catch (e) {
     console.log(e)
     reply.code(500).send({status: 'error', error: 'server_error'}) 
@@ -4048,11 +4174,19 @@ async function GetPlayerStats(playerId) {
 async function GetAllUniquePlayers() {
   try {
     const q0 = `
-      SELECT *
-      FROM players
+      SELECT p.*, c.iso_3166_1_alpha_2_code as country_code
+      FROM players p, countries c
       WHERE merged_with_id=0
+      AND p.nationality_id=c.id
+      ORDER BY p.nickname
     `
     const r0 = await DoQuery(q0, [])
+    let i = 0
+    while (i < r0.length) {
+      const flag = countries[r0[i].country_code]?.emoji ?? ''
+      r0[i] .flag = flag
+      i++
+    }
     return r0
   } catch (e) {
     console.log(e)

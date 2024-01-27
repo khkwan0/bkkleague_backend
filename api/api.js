@@ -2320,7 +2320,8 @@ async function GetPlayerStatsInfo(playerId) {
       WHERE p.id=?
       AND t.season_id=?
       AND p.id=pt.player_id
-      AND t.id=pt.team_id;
+      AND t.id=pt.team_id
+      AND pt.active=1
     `
     const r1 = await DoQuery(q1, [playerId, currentSeason])
     if (typeof r1[0] !== 'undefined') {

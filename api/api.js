@@ -17,6 +17,9 @@ import fetch from 'node-fetch'
 import fastifyFormBody from '@fastify/formbody'
 import nodemailer from 'nodemailer'
 import verifyAppleToken from 'verify-apple-id-token'
+import {initializeApp} from 'firebase-admin/app'
+import {getMessaging} from 'firebase-admin/messaging'
+import admin from 'firebase-admin'
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
@@ -67,6 +70,11 @@ const transporter = nodemailer.createTransport({
   }
 })
 
+import firebaseAccount from './bangkok-pool-league-b8100-firebase-adminsdk-c8zuk-b93d8193a2.json' assert {type: 'json'}
+admin.initializeApp({
+  credential: admin.credential.cert(firebaseAccount),
+})
+
 function sendMail(mail) {
   return new Promise((resolve, reject) => {
     transporter.sendMail(mail, (err, info) => {
@@ -91,6 +99,52 @@ const DoQuery = (queryString, params) => {
   })
 }
 
+;(async () => {
+  try {
+    const q0 = `
+      SELECT fcm_tokens
+      FROM players
+      WHERE id=1933
+    `
+    const r0 = await DoQuery(q0, [])
+    if (r0[0].fcm_tokens) {
+      const tokens = JSON.parse(r0[0].fcm_tokens)
+      const message = {
+        tokens: tokens,
+        data: {
+          content_available: 'true',
+          priority: 'high',
+        },
+        /*
+        apns: {
+          payload: {
+            aps: {
+              badge: 0,
+            },
+          },
+          headers: {
+            'apns-priority': '5',
+          },
+        },
+        */
+        notification: {
+          title: 'yo',
+          body: 'test',
+        }
+      }
+      try {
+        const res = await admin.messaging().sendEachForMulticast(message)
+        console.log(res)
+      } catch (e) {
+        console.log(e)
+      }
+    }
+  } catch (e) {
+    console.log(e)
+  }
+})()
+
+
 async function DoQuery2(queryString, params) {
   const conn = await mysqlHandle.getConnection()
   const res = mysqlHandle.query(queryString, params)
@@ -105,6 +159,68 @@ async function CacheGet(key) {
   } catch (e) {
     console.log(e)
     return null
+  }
+}
+
+async function SendNotification(tokens = [], title = '', body = '', badge = 0) {
+  if (tokens.length > 0) {
+    try {
+      const payload = {
+        tokens: tokens,
+        data: {
+          content_available: 'true',
+          priority: 'high',
+        },
+        apns: {
+          payload: {
+            aps: {
+              badge: badge,
+            },
+          },
+          headers: {
+            'apns-priority': '5',
+          },
+        }
+      }
+      if (title || body) {
+        payload.notifiction = {
+          body,
+          title,
+        }
+      }
+      const res = await admin.messaging().sendEachForMulticast(payload)
+      fastify.log.info('Notification send: Success - ' + res.successCount + ', Failure - ' + res.failureCount)
+      if (res.failureCount) {
+        console.log(res?.responses?.[0].error ?? '')
+      }
+    } catch (e) {
+      console.log(e)
+    }
+  }
+}
+
+async function SendNotificationToAdmins(body = '', title = '', badge = 0) {
+  try {
+    const q0 = `
+      SELECT fcm_tokens
+      FROM players
+      WHERE role_id=9
+    `
+    const r0 = await DoQuery(q0, [])
+    let tokens = []
+    r0.forEach(row => {
+      try {
+        if (row.fcm_tokens) {
+          const _tokens = JSON.parse(row.fcm_tokens)
+          tokens = tokens.concat(_tokens)
+        }
+      } catch (e) {
+        console.log(e)
+      }
+    })
+    SendNotification(tokens, title, body, badge)
+  } catch (e) {
+    console.log(e)
   }
 }
 
@@ -530,6 +646,15 @@ fastify.get('/users/merge/:currentId/:targetId', async (req, reply) => {
           VALUES(?, ?)
         `
         const r1 = await DoQuery(q1, [playerId, targetId])
+
+        const q2 = `
+          SELECT count(*) as count
+          FROM merge_requests
+          WHERE status=0
+        `
+        const r2 = await DoQuery(q2, [])
+        const count = r2[0].count
+        SendNotificationToAdmins('', '', count)
       }
       reply.code(200).send({status: 'ok'})
     }
@@ -940,6 +1065,40 @@ fastify.get('/player/stats/info/:playerId', async (req, reply) => {
   } catch (e) {
     console.log(e)
     reply.code(500).send()
+  }
+})
+
+fastify.post('/user/token', async (req, reply) => {
+  try {
+    const playerId = req.user.user.id
+    const token = req.body.token
+    if (playerId && token) {
+      const q0 = `
+        SELECT fcm_tokens
+        FROM players
+        WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [playerId])
+      let tokens = []
+      try {
+        tokens = JSON.parse(r0[0].fcm_tokens)
+      } catch (e) {
+        fastify.log.info('No tokens')
+      }
+      if (!tokens.includes(token)) {
+        tokens.push(token)
+        const q0 = `
+          UPDATE players
+          SET fcm_tokens=?
+          WHERE id=?
+        `
+        const r0 = await DoQuery(q0, [JSON.stringify(tokens), playerId])
+      }
+    }
+    reply.code(200).send({status: 'ok'})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -1684,6 +1843,7 @@ fastify.get('/admin/mergerequests', async (req, reply) => {
       WHERE status=0
     `
     const r1 = await DoQuery(q1, [])
+    SendNotificationToAdmins()
     reply.code(200).send({status: 'ok', data: r0})
   } catch (e) {
     console.log(e)
@@ -2891,7 +3051,7 @@ async function GetStandings(_seasonId = null) {
   try {
     const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
     let query = `
-      SELECT x.id, x.short_name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id
+      SELECT x.id, x.short_name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id, m.status_id as match_status
       FROM (
           SELECT t.id, t.short_name, d.name division_name
           FROM teams t, divisions d, seasons s
@@ -2929,8 +3089,10 @@ async function GetStandings(_seasonId = null) {
         }
       }
 
-      // computer games played
-      _standings[stat.division_name].teams[stat.id].played++
+      // compute games played
+      if (stat.match_status === 3) {
+        _standings[stat.division_name].teams[stat.id].played++
+      }
 
       // add stats
       if (stat.id === stat.home_team_id) {
@@ -4193,6 +4355,92 @@ async function GetAllUniquePlayers() {
     throw new Error(e)
   }
 }
+
+
+/*
+async function GetAllUniquePlayers() {
+  try {
+    const currentSeason = (await GetCurrentSeason()).id
+    let query = `
+      SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, countries.iso_3166_1_alpha_2_code country, countries.name_en cn_en, countries.name_th cn_th, players.gender_id gender, players.language lang, players.profile_picture pic, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt
+      FROM players_frames, players, frames, matches, divisions, seasons, countries
+      WHERE players_frames.player_id=players.id
+        AND players_frames.frame_id=frames.id
+        AND players.merged_with_id=0
+        AND frames.match_id=matches.id
+        AND matches.division_id=divisions.id
+        AND divisions.season_id=seasons.id
+        AND players.nationality_id=countries.id
+      GROUP BY is_home, player_name,firstname, lastname, country, p_id, division, htid, atid, season, s_id  
+      ORDER BY s_id DESC, division DESC
+    `
+    const _frames = await DoQuery(query, [])
+
+
+    query = `SELECT * FROM teams`
+    const _teams = await DoQuery(query, [])
+    const teams = {}
+    _teams.forEach(team => teams[team.id] = team)
+
+    const players = {}
+    _frames.forEach(frame => {
+      if (typeof players[frame.p_id] === 'undefined') {
+        players[frame.p_id] = {
+          latestSeason: frame.s_id,
+          flag: countries[frame.country]?.emoji ?? '',
+          nationality: {
+            en: frame.cn_en,
+            th: frame.cn_th,
+          },
+          pic: frame.pic,
+          gender: frame.gender === 2 ? 'Male' : frame.gender === 1 ? 'Female' : 'Other',
+          language: frame.lang,
+          player_id: frame.p_id,
+          firstname: frame.firstname,
+          lastname: frame.lastname,
+          name: frame.player_name,
+          total: 0,
+          teams: [],
+          seasons: {}
+        }
+      }
+      if (typeof players[frame.p_id].seasons[frame.season] === 'undefined') {
+        players[frame.p_id].seasons[frame.season] = {}
+      }
+      const team = frame.is_home ? teams[frame.htid] : teams[frame.atid]
+      if (frame.s_id === currentSeason) {
+        if (!players[frame.p_id].teams.includes(team.short_name)) {
+          players[frame.p_id].teams.push(team.short_name)
+        }
+      }
+      if (typeof players[frame.p_id].seasons[frame.season][team.name] === 'undefined') {
+        players[frame.p_id].seasons[frame.season][team.name] = 0
+      }
+      players[frame.p_id].seasons[frame.season][team.name] += frame.cnt
+      players[frame.p_id].total += frame.cnt
+    })
+
+    if (activeOnly) {
+      const toSend = []
+      for (let key in players) {
+        if (players[key].latestSeason === currentSeason) {
+          toSend.push(players[key])
+        }
+      }
+      toSend.sort((a, b) => a.name > b.name ? 1 : -1)
+      return toSend
+    } else {
+      const res = Object.keys(players).map(key => players[key])
+      res.sort((a, b) => a.name > b.name ? 1 : -1)
+  //    console.log(JSON.stringify(res, null, 2))
+      return res
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+*/
 
 async function GetAllPlayers(activeOnly = true) {
   try {

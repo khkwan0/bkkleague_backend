@@ -106,35 +106,51 @@ const DoQuery = (queryString, params) => {
       FROM players
       WHERE id=1933
     `
+    const tokenOwners = {}
     const r0 = await DoQuery(q0, [])
     if (r0[0].fcm_tokens) {
       const tokens = JSON.parse(r0[0].fcm_tokens)
+      tokens.forEach(_token => {
+        tokenOwners[_token] = 1933
+      })
       const message = {
         tokens: tokens,
         data: {
           content_available: 'true',
           priority: 'high',
         },
-        /*
+        android: {
+          priority: 'high',
+          data: {
+            badge: '69',
+          },
+          notification: {
+            title: 'FCM',
+            body: 'Test yo!'
+          }
+        },
         apns: {
           payload: {
             aps: {
-              badge: 0,
+              alert: {
+                title: 'APNS',
+                subtitle: 'Test',
+                body: 'YO Yo!',
+              }
             },
           },
           headers: {
             'apns-priority': '5',
           },
         },
-        */
-        notification: {
-          title: 'yo',
-          body: 'test',
-        }
       }
       try {
         const res = await admin.messaging().sendEachForMulticast(message)
         console.log(res)
+        if (res.failureCount > 0) {
+          DeleteBadTokens(res, tokens, tokenOwners)
+        }
+
       } catch (e) {
         console.log(e)
       }
@@ -162,13 +178,55 @@ async function CacheGet(key) {
   }
 }
 
-async function SendNotification(tokens = [], title = '', body = '', badge = 0) {
+async function DeleteBadTokens(res, tokens, tokenOwners) {
+  let i = 0
+  while (i < res.responses.length) {
+    if (!res.responses[i].success) {
+      try {
+        const failedToken = tokens[i]
+        const owner = tokenOwners[tokens[i]]
+        const q0 = `
+          SELECT fcm_tokens
+          FROM players
+          WHERE id=?
+        `
+        const r0 = await DoQuery(q0, [owner])
+        if (r0[0].fcm_tokens) {
+          const userTokens = JSON.parse(r0[0].fcm_tokens)
+          const newTokens = []
+          userTokens.forEach(_token => {
+            if (_token !== failedToken) {
+              newTokens.push(_token)
+            }
+          })
+          const q1 = `
+            UPDATE players
+            SET fcm_tokens=?
+            WHERE id=?
+          `
+          const r1 = await DoQuery(q1, [JSON.stringify(newTokens), owner])
+        }
+      } catch (e) {
+        console.log(e)
+      }
+    }
+    i++
+  }
+}
+
+async function SendNotification(tokens = [], tokenOwners = {}, title = '', body = '', badge = 0) {
   if (tokens.length > 0) {
     try {
       const payload = {
         tokens: tokens,
         data: {
           content_available: 'true',
+          priority: 'high',
+        },
+        android: {
+          data: {
+            badge: badge.toString(),
+          },
           priority: 'high',
         },
         apns: {
@@ -190,8 +248,8 @@ async function SendNotification(tokens = [], title = '', body = '', badge = 0) {
       }
       const res = await admin.messaging().sendEachForMulticast(payload)
       fastify.log.info('Notification send: Success - ' + res.successCount + ', Failure - ' + res.failureCount)
-      if (res.failureCount) {
-        console.log(res?.responses?.[0].error ?? '')
+      if (res.failureCount > 0) {
+        DeleteBadTokens(res, tokens, tokenOwners)
       }
     } catch (e) {
       console.log(e)
@@ -202,23 +260,27 @@ async function SendNotification(tokens = [], title = '', body = '', badge = 0) {
 async function SendNotificationToAdmins(body = '', title = '', badge = 0) {
   try {
     const q0 = `
-      SELECT fcm_tokens
+      SELECT fcm_tokens, id
       FROM players
       WHERE role_id=9
     `
     const r0 = await DoQuery(q0, [])
     let tokens = []
+    const tokenOwners = {}
     r0.forEach(row => {
       try {
         if (row.fcm_tokens) {
           const _tokens = JSON.parse(row.fcm_tokens)
           tokens = tokens.concat(_tokens)
+          tokens.forEach(token => {
+            tokenOwners[token] = row.id
+          })
         }
       } catch (e) {
         console.log(e)
       }
     })
-    SendNotification(tokens, title, body, badge)
+    SendNotification(tokens, tokenOwners, title, body, badge)
   } catch (e) {
     console.log(e)
   }
@@ -1069,36 +1131,40 @@ fastify.get('/player/stats/info/:playerId', async (req, reply) => {
 })
 
 fastify.post('/user/token', async (req, reply) => {
-  try {
-    const playerId = req.user.user.id
-    const token = req.body.token
-    if (playerId && token) {
-      const q0 = `
-        SELECT fcm_tokens
-        FROM players
-        WHERE id=?
-      `
-      const r0 = await DoQuery(q0, [playerId])
-      let tokens = []
-      try {
-        tokens = JSON.parse(r0[0].fcm_tokens)
-      } catch (e) {
-        fastify.log.info('No tokens')
-      }
-      if (!tokens.includes(token)) {
-        tokens.push(token)
+  if (typeof req?.user?.user !== 'undefined' ) {
+    try {
+      const playerId = req.user.user.id
+      const token = req.body.token
+      if (playerId && token) {
         const q0 = `
-          UPDATE players
-          SET fcm_tokens=?
+          SELECT fcm_tokens
+          FROM players
           WHERE id=?
         `
-        const r0 = await DoQuery(q0, [JSON.stringify(tokens), playerId])
+        const r0 = await DoQuery(q0, [playerId])
+        let tokens = []
+        try {
+          tokens = JSON.parse(r0[0].fcm_tokens)
+        } catch (e) {
+          fastify.log.info('No tokens')
+        }
+        if (!tokens.includes(token)) {
+          tokens.push(token)
+          const q0 = `
+            UPDATE players
+            SET fcm_tokens=?
+            WHERE id=?
+          `
+          const r0 = await DoQuery(q0, [JSON.stringify(tokens), playerId])
+        }
       }
+      reply.code(200).send({status: 'ok'})
+    } catch (e) {
+      console.log(e)
+      reply.code(500).send({status: 'error', error: 'server_error'})
     }
+  } else {
     reply.code(200).send({status: 'ok'})
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -1860,7 +1926,6 @@ fastify.get('/admin/mergerequest/accept/:requestId', async (req, reply) => {
       WHERE id=?
     `
     const r0 = await DoQuery(q0, [requestId])
-    console.log(r0)
 
     if (r0.length === 1) {
       const playerId = r0[0].player_id

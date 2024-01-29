@@ -15,16 +15,26 @@ import countries from './countries.emoji.json' assert {type: 'json'}
 import fs from 'fs'
 import fetch from 'node-fetch'
 import fastifyFormBody from '@fastify/formbody'
+import fastifyMultipart from '@fastify/multipart'
 import nodemailer from 'nodemailer'
 import verifyAppleToken from 'verify-apple-id-token'
 import {initializeApp} from 'firebase-admin/app'
 import {getMessaging} from 'firebase-admin/messaging'
 import admin from 'firebase-admin'
+import {copyFile} from 'node:fs/promises'
 
 dotenv.config()
 const fastify = Fastify({ logger: true})
 fastify.register(fastifyJWT, {secret: process.env.JWT_SECRET})
 fastify.register(fastifyFormBody)
+fastify.register(fastifyMultipart, {
+  fieldNameSize: 100,
+  fieldSize: 100,
+  fileSize: 5000000,
+  files: 1,
+  parts: 1000,
+//  attachFieldsToBody: true,
+})
 /*
 const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
@@ -388,7 +398,6 @@ fastify.get('/account/delete', async (req, reply) => {
   try {
     await req.jwtVerify()
     const user = await GetPlayerFromToken(req.user.token)
-    console.log(user)
     const userId = user.secondaryId ? user.secondaryId : user.playerId
     SetUserInactive(userId)
     reply.code(200).send({status: 'ok'})
@@ -644,6 +653,43 @@ fastify.post('/login/recover/verify', async (req, reply) => {
   }
 })
 
+fastify.post('/avatar', async (req, reply) => {
+  try {
+    const playerId = req?.user?.user?.id ?? null
+    if (playerId) {
+      const data = await req.saveRequestFiles()
+      const timestamp = new Date().toISOString()
+      const newFilename = `${playerId}_appupload_${timestamp}.jpg`
+      await copyFile(data[0].filepath, '/usr/src/app/assets/profile_pictures/' + newFilename)
+      const q0 = `
+        SELECT profile_picture
+        FROM players
+        WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [playerId])
+      if (r0.length > 0) {
+        if (r0[0].profile_picture) {
+          const q1 = `
+            INSERT INTO older_profile_pics(player_id, old_profile_pic)
+            VALUES(?, ?)
+          `
+          const r1 = await DoQuery(q1, [playerId, r0[0].profile_picture])
+        }
+      }
+      const q2 = `
+        UPDATE players
+        SET profile_picture=?
+        WHERE id=?
+      `
+      const r2 = await DoQuery(q2, [newFilename, playerId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+  }
+})
 fastify.post('/login/register', async (req, reply) => {
   try {
     if (
@@ -2709,7 +2755,7 @@ async function AddNewTeam(name, venueId) {
 async function GetTeamInfo(teamId) {
   try {
     let teamQuery = `
-      SELECT teams.*, divisions.short_name as divison_short_name, divisions.name as division_name, venues.name, venues.logo as venue_logo
+      SELECT teams.*, divisions.short_name as divison_short_name, divisions.name as division_name, venues.name, venues.logo as venue_logo, teams.name as name
       FROM teams, divisions, venues
       WHERE teams.id=?
       AND divisions.id=teams.division_id
@@ -4402,9 +4448,10 @@ async function GetAllUniquePlayers() {
   try {
     const q0 = `
       SELECT p.*, c.iso_3166_1_alpha_2_code as country_code
-      FROM players p, countries c
-      WHERE merged_with_id=0
-      AND p.nationality_id=c.id
+      FROM players p
+      LEFT OUTER JOIN countries c
+      ON p.nationality_id=c.id
+      WHERE p.merged_with_id=0
       ORDER BY p.nickname
     `
     const r0 = await DoQuery(q0, [])

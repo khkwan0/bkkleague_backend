@@ -136,8 +136,9 @@ const DoQuery = (queryString, params) => {
           },
           notification: {
             title: 'FCM',
-            body: 'Test yo!'
-          }
+            body: 'Test yo!',
+            channel_id: 'Admin',
+          },
         },
         apns: {
           payload: {
@@ -224,7 +225,7 @@ async function DeleteBadTokens(res, tokens, tokenOwners) {
   }
 }
 
-async function SendNotification(tokens = [], tokenOwners = {}, title = '', body = '', badge = 0) {
+async function SendNotification(tokens = [], tokenOwners = {}, title = '', body = '', badge = 0, channelId = 'App Wide') {
   if (tokens.length > 0) {
     try {
       const payload = {
@@ -238,11 +239,15 @@ async function SendNotification(tokens = [], tokenOwners = {}, title = '', body 
             badge: badge.toString(),
           },
           priority: 'high',
+          notification: {
+            channel_id: channelId,
+          },
         },
         apns: {
           payload: {
             aps: {
               badge: badge,
+              alert: {},
             },
           },
           headers: {
@@ -251,10 +256,10 @@ async function SendNotification(tokens = [], tokenOwners = {}, title = '', body 
         }
       }
       if (title || body) {
-        payload.notifiction = {
-          body,
-          title,
-        }
+        payload.android.notifiction.title = title
+        payload.android.notifiction.body = body
+        payload.apns.payload.aps.alert.title = title
+        payload.apns.payload.aps.alert.body = body
       }
       const res = await admin.messaging().sendEachForMulticast(payload)
       fastify.log.info('Notification send: Success - ' + res.successCount + ', Failure - ' + res.failureCount)
@@ -969,6 +974,29 @@ fastify.get('/matches/completed/season/:season', async (req, reply) => {
   }
 })
 
+fastify.get('/matches/season/:seasonId', async (req, reply) => {
+  try {
+    const seasonId = req.params.seasonId
+    const res = await GetMatchesBySeason(seasonId)
+    const _matches = {}
+    res.forEach(match => {
+      const matchDateStr = match.date.toISOString()
+      if (typeof _matches[matchDateStr] === 'undefined') {
+        _matches[matchDateStr] = []
+      }
+      _matches[matchDateStr].push(match)
+    })
+    const matches = []
+    Object.keys(_matches).forEach(date => {
+      matches.push({date: date, matches: _matches[date]})
+    })
+    reply.code(200).send({status: 'ok', data: matches})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/matches', async (req, reply) => {
   let userid = null
   let verifiedJWT = false
@@ -1648,6 +1676,7 @@ fastify.post('/admin/season/new', async (req, reply) => {
       const {name, shortName, description} = req.body
       if (name && shortName) {
         const res = await SaveNewSeason(name, shortName, description)
+        LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
         reply.code(200).send(res)
       } else {
         reply.code(400).send({status: 'error', error: 'invalid_parameters'})
@@ -1676,6 +1705,7 @@ fastify.post('/admin/migrate', async (req, reply) => {
           reply.code(400).send({status: 'error', error: 'season_exists'})
         } else {
           await MigrateTeams(oldSeason, newSeason)
+          LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
           reply.code(200).send({status: 'ok'})
         }
       }
@@ -1737,6 +1767,7 @@ fastify.post('/admin/team/division', async (req, reply) => {
       const divisionId = req.body.divisionId ?? null
       if (teamId && divisionId) {
         const res = await SetTeamDivision(teamId, divisionId)
+        LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
         return {status: 'ok', data: res}
       } else {
         reply.code(400).send({status: 'error', error: 'invalid_params'})
@@ -1750,6 +1781,33 @@ fastify.post('/admin/team/division', async (req, reply) => {
   }
 })
 
+fastify.post('/admin/match/date', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      const newDate = req.body.newDate
+      const matchId = req.body.matchId
+      if (typeof newDate !== 'undefined' && newDate && typeof matchId !== 'undefined') {
+        const q0 = `
+          UPDATE matches
+          SET date=?
+          WHERE id=?
+        `
+        const r0 = await DoQuery(q0, [DateTime.fromISO(newDate).toFormat('yyyy-MM-dd'), matchId])
+        LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
+        reply.code(200).send({status: 'ok'})
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_params'})
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+
 fastify.post('/admin/team', async (req, reply) => {
   try {
     if (req.user.user.isAdmin) {
@@ -1760,6 +1818,7 @@ fastify.post('/admin/team', async (req, reply) => {
         req.body.venue
       ) {
         const res = await AddNewTeam(req.body.name, req.body.venue)
+        LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
         reply.code(200).send({status: 'ok'})
       } else {
         reply.code(400).send({status: 'error', error: 'invalid_params'})
@@ -1806,6 +1865,7 @@ fastify.post('/admin/match/completed', async (req, reply) => {
             }
           }
           await UpdateCompletedMatchHistory(matchId, data)
+          LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
           reply.code(200).send({status: 'ok'})
         } else if (req.body.type === 'win') {
           const connection = await mysqlHandlep.getConnection()
@@ -1878,6 +1938,7 @@ fastify.post('/admin/match/completed', async (req, reply) => {
                 }
                 fastify.log.info('COMMIT')
                 await connection.commit()
+                LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
               }
             })
           } catch (e) {
@@ -1916,6 +1977,7 @@ fastify.post('/admin/login', async (req, reply) => {
       if (res) {
         const token = await CreateAndSaveAdminSecretKey(res)
         const jwt = fastify.jwt.sign({token: token})
+        LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
         return {
           status: 'ok',
           data: {
@@ -2017,6 +2079,18 @@ fastify.get('/admin/mergerequest/deny/:requestId', async (req, reply) => {
 
 
 /* ---------  FINISH FASIFY ------------*/
+
+async function LogAdminAction(userId, url, data) {
+  try {
+    const q0 = `
+      INSERT INTO admin_actions(user_id, url, data)
+      VALUES(?, ?, ?)
+    `
+    const r0 = await DoQuery(q0, [userId, url, data])
+  } catch (e) {
+    console.log(e)
+  }
+}
 
 function ValidateFinalize(home, away) {
   if (typeof home === 'undefined' || typeof away === 'undefined') {

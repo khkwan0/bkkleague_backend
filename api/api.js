@@ -930,6 +930,57 @@ fastify.get('/game/types', async (req, reply) => {
   }
 })
 
+fastify.get('/scores/live', async (req, reply) => {
+  try {
+    const q0 = `
+      SELECT m.id, m.home_team_id, m.away_team_id, h.name home_name, a.name away_name
+      FROM matches m, teams h, teams a
+      WHERE date >= ?
+      AND date < ?
+      AND m.home_team_id=h.id
+      AND m.away_team_id=a.id
+    `
+    const startDate = DateTime.now().toFormat('yyyy-MM-dd')
+    const endDate = DateTime.now().plus({days: 2}).toFormat('yyyy-MM-dd')
+    const r0 = await DoQuery(q0, [startDate, endDate])
+    const matches = {}
+    const promises = []
+    r0.forEach(match => {
+      matches[match.id] = match
+      matches[match.id].homeScore = 0
+      matches[match.id].awayScore = 0
+      const key = `match_${match.id}`
+      promises.push(CacheGet(key))
+    })
+    const res = await Promise.all(promises)
+    res.forEach(_liveMatch => {
+      if (_liveMatch) {
+        const liveMatch = JSON.parse(_liveMatch)
+        if (typeof liveMatch.frames !== 'undefined' && Array.isArray(liveMatch.frames)) {
+          let homeScore = 0
+          let awayScore = 0
+          liveMatch.frames.forEach(frame => {
+            if (typeof frame.winner && frame.winner > 0) {
+              if (frame.winner === matches[liveMatch.matchId].home_team_id) {
+                homeScore++
+              } else {
+                awayScore++
+              }
+            }
+          })
+          matches[liveMatch.matchId].homeScore = homeScore
+          matches[liveMatch.matchId].awayScore = awayScore
+        }
+      }
+    })
+    const scores = Object.keys(matches).map(matchId => matches[matchId])
+    reply.code(200).send({status: 'ok', data: scores})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send()
+  }
+})
+
 fastify.get('/matches/postponed', async (req, reply) => {
   try {
     const res = await GetPostponedMatches()
@@ -997,7 +1048,35 @@ fastify.get('/matches/season/:seasonId', async (req, reply) => {
   }
 })
 
+fastify.get('/match/info/full/:matchId', async (req, reply) => {
+  const matchId = req.params.matchId
+  if (typeof matchId !== 'undefined' && matchId) {
+    const q0 = `
+      SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
+      FROM (
+        SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
+        FROM (
+          SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+          FROM matches m, divisions d, venues v, teams
+          WHERE m.id=?
+            AND m.home_team_id=teams.id
+            AND teams.venue_id=v.id
+            AND m.division_id=d.id
+        ) AS x
+        LEFT JOIN teams t
+          ON x.home_team_id=t.id
+      ) AS y
+      LEFT JOIN teams tt
+        ON y.away_team_id=tt.id
+    `
+    const r0 = await DoQuery(q0, [matchId])
+    reply.code(200).send({status: 'ok', data: r0[0]})
+  } else {
+    reply.code(400).send({status: 'error', error: 'invalid_params'})
+  }
+})
 fastify.get('/matches', async (req, reply) => {
+  /*
   let userid = null
   let verifiedJWT = false
   try {
@@ -1006,11 +1085,12 @@ fastify.get('/matches', async (req, reply) => {
   } catch (e) {
     fastify.log.info('Invalid JWT')
   }
+  */
 
   try {
     const {newonly, noteam, completed} = req.query
     const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
-    userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
+    const userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = completed ?
       await GetMatchesBySeason((await GetCurrentSeason()).id)
       :
@@ -1106,7 +1186,7 @@ fastify.get('/season/matches', async (req, reply) => {
   // what we get back from the db query is a flat, one dimensional array
   // of matches, so we have to transform it like above.
   try {
-    const season = req.query?.season ?? 10
+    const season = req.query?.season ?? 11
     const matchGroupingsByDate = await GetMatchesBySeasonCache(season)
     if (matchGroupingsByDate) {
       // determine index for scroll index and unserialize

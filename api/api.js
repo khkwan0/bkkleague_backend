@@ -1503,7 +1503,12 @@ fastify.get('/stats/match', async (req, reply) => {
 fastify.get('/stats/teams/:seasonId', async (req, reply) => {
   try {
     const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
-    const stats = await GetTeamStats(seasonId)
+    const stats8B = await GetTeamStats(seasonId, '8b')
+    const stats9B = await GetTeamStats(seasonId, '9b')
+    const stats = {
+      eightBall: stats8B,
+      nineBall: stats9B,
+    }
     return stats
   } catch (e) {
     return []
@@ -3353,7 +3358,7 @@ async function GetLeaguePlayerStats(_seasonId = null) {
     })
     const stats = []
     Object.keys(_stats).forEach(key => {
-      if (_stats[key].played >= 30) {
+      if (_stats[key].played >= 1) {
         const _stat = {..._stats[key]}
         _stat.rawPerfDisp = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0).toFixed(2) : '0.00'
         _stat.rawPerf = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0) : 0.00
@@ -3369,7 +3374,7 @@ async function GetLeaguePlayerStats(_seasonId = null) {
   }
 }
 
-async function GetTeamStats(_seasonId = null) {
+async function GetTeamStats(_seasonId = null, gameType = '8b') {
   try {
     const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
     let query = `
@@ -3379,6 +3384,7 @@ async function GetTeamStats(_seasonId = null) {
         FROM matches m, divisions d, seasons s
         WHERE m.division_id=d.id
           AND m.status_id=3
+          AND d.game_type=?
           AND d.season_id=s.id
           AND s.id=?
       ) as x, teams ta, teams th
@@ -3386,7 +3392,7 @@ async function GetTeamStats(_seasonId = null) {
         AND x.away_team_id=ta.id
       ORDER BY date
     `
-    const rawStats = await DoQuery(query, [seasonId])
+    const rawStats = await DoQuery(query, [gameType, seasonId])
     const _stats = {}
     rawStats.forEach(match => {
       if (typeof _stats[match.away_team_id] === 'undefined') {
@@ -3426,7 +3432,7 @@ async function GetTeamStats(_seasonId = null) {
       try {
         _match.score = _match.score ? phpUnserialize(_match.score) : _match.score
       } catch (e) {
-        _match.score = _match.score ? JSON.parsJSON.parse(_match.score) : _match.score
+        _match.score = _match.score ? JSON.parse(_match.score) : _match.score
       }
       _stats[match.home_team_id].points += match.home_points
       _stats[match.away_team_id].points += match.away_points

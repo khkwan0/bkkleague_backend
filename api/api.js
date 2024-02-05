@@ -3368,7 +3368,11 @@ async function GetLeaguePlayerStats(_seasonId = null) {
       }
     })
     stats.sort((a, b) => b.adjPerf - a.adjPerf)
-    return stats
+    const finalStats = stats.map((stat, index) => {
+      stat.rank = index + 1
+      return stat
+    })
+    return finalStats
   } catch (e) {
     console.log(e)
   }

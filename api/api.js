@@ -24,7 +24,10 @@ import admin from 'firebase-admin'
 import {copyFile} from 'node:fs/promises'
 
 dotenv.config()
-const fastify = Fastify({ logger: true})
+const fastify = Fastify({
+  trustProxy: true,
+  logger: true,
+})
 fastify.register(fastifyJWT, {secret: process.env.JWT_SECRET})
 fastify.register(fastifyFormBody)
 fastify.register(fastifyMultipart, {
@@ -157,7 +160,7 @@ const DoQuery = (queryString, params) => {
       }
       try {
         const res = await admin.messaging().sendEachForMulticast(message)
-        console.log(res)
+        fastify.log.info(res)
         if (res.failureCount > 0) {
           DeleteBadTokens(res, tokens, tokenOwners)
         }
@@ -395,7 +398,6 @@ fastify.post('/support', async (req, reply) => {
 })
 
 fastify.post('/delete', async (req, reply) => {
-  console.log(req.body)
   reply.code(200).send('Request received.  Sorry to see you go.  It may up to 48 hours to process.')
 })
 
@@ -1681,7 +1683,6 @@ fastify.ready().then(() => {
       try {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
         if (ValidateIncoming(data)) {
-          console.log('in', data)
           if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {
@@ -3448,83 +3449,90 @@ async function GetTeamStats(_seasonId = null) {
 async function GetStandings(_seasonId = null) {
   try {
     const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
-    let query = `
-      SELECT x.id, x.short_name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id, m.status_id as match_status
-      FROM (
-          SELECT t.id, t.short_name, d.name division_name
-          FROM teams t, divisions d, seasons s
-          WHERE t.division_id=d.id
-            AND d.season_id=s.id
-            AND s.id=?
-          ) as x, matches m, teams ta, teams th
-      WHERE (m.home_team_id=x.id OR m.away_team_id=x.id)
-        AND m.status_id > 0
-        AND m.away_team_id=ta.id
-        AND m.home_team_id=th.id
-      ORDER BY x.division_name, m.date;
-    `
-    const rawStandings = await DoQuery(query, [seasonId])
-    const _standings = {}
+    const cacheKey = 'league_standings_season' + seasonId
+    const cachedStandings = await CacheGet(cacheKey)
+    if (cachedStandings) {
+      return JSON.parse(cachedStandings)
+    } else {
+      let query = `
+        SELECT x.id, x.short_name team_name, x.division_name, m.date, th.short_name home_team, ta.short_name away_team, ta.id away_team_id, m.home_frames, m.away_frames, m.home_team_id, m.home_points, m.away_points, m.id match_id, m.status_id as match_status
+        FROM (
+            SELECT t.id, t.short_name, d.name division_name
+            FROM teams t, divisions d, seasons s
+            WHERE t.division_id=d.id
+              AND d.season_id=s.id
+              AND s.id=?
+            ) as x, matches m, teams ta, teams th
+        WHERE (m.home_team_id=x.id OR m.away_team_id=x.id)
+          AND m.status_id > 0
+          AND m.away_team_id=ta.id
+          AND m.home_team_id=th.id
+        ORDER BY x.division_name, m.date;
+      `
+      const rawStandings = await DoQuery(query, [seasonId])
+      const _standings = {}
 
-    rawStandings.forEach(stat => {
+      rawStandings.forEach(stat => {
 
-      // create the division groups
-      if (typeof _standings[stat.division_name] === 'undefined') {
-        _standings[stat.division_name] = {
-          division: stat.division_name,
-          teams: {}
+        // create the division groups
+        if (typeof _standings[stat.division_name] === 'undefined') {
+          _standings[stat.division_name] = {
+            division: stat.division_name,
+            teams: {}
+          }
         }
-      }
 
-      // create the team in the division
-      if (typeof _standings[stat.division_name].teams[stat.id] === 'undefined') {
-        _standings[stat.division_name].teams[stat.id] = {
-          name: stat.team_name,
-          points: 0,
-          frames: 0,
-          played: 0,
-          matches: []
+        // create the team in the division
+        if (typeof _standings[stat.division_name].teams[stat.id] === 'undefined') {
+          _standings[stat.division_name].teams[stat.id] = {
+            name: stat.team_name,
+            points: 0,
+            frames: 0,
+            played: 0,
+            matches: []
+          }
         }
-      }
 
-      // compute games played
-      if (stat.match_status === 3) {
-        _standings[stat.division_name].teams[stat.id].played++
-      }
+        // compute games played
+        if (stat.match_status === 3) {
+          _standings[stat.division_name].teams[stat.id].played++
+        }
 
-      // add stats
-      if (stat.id === stat.home_team_id) {
-        _standings[stat.division_name].teams[stat.id].points += stat.home_points
-        _standings[stat.division_name].teams[stat.id].frames += stat.home_frames
-        _standings[stat.division_name].teams[stat.id].matches.push({
-          home: true,
-          vs: stat.away_team,
-          vsId: stat.away_team_id,
-          pts: stat.home_points,
-          frames: stat.home_frames,
-          matchId: stat.match_id,
-        })
-      } else {
-        _standings[stat.division_name].teams[stat.id].points += stat.away_points
-        _standings[stat.division_name].teams[stat.id].frames += stat.away_frames
-        _standings[stat.division_name].teams[stat.id].matches.push({
-          home: false,
-          vs: stat.home_team,
-          vsId: stat.home_team_id,
-          pts: stat.away_points,
-          frames: stat.away_frames,
-          matchId: stat.match_id,
-        })
-      }
-    })
-    const __standings = Object.keys(_standings).map(key => _standings[key])
-    const standings = __standings.map(division => {
-      const _division = {...division}
-      _division.teams = Object.keys(division.teams).map(team => division.teams[team])
-      _division.teams.sort((a, b) => b.points - a.points || b.frames - a.frames)
-      return _division
-    })
-    return standings
+        // add stats
+        if (stat.id === stat.home_team_id) {
+          _standings[stat.division_name].teams[stat.id].points += stat.home_points
+          _standings[stat.division_name].teams[stat.id].frames += stat.home_frames
+          _standings[stat.division_name].teams[stat.id].matches.push({
+            home: true,
+            vs: stat.away_team,
+            vsId: stat.away_team_id,
+            pts: stat.home_points,
+            frames: stat.home_frames,
+            matchId: stat.match_id,
+          })
+        } else {
+          _standings[stat.division_name].teams[stat.id].points += stat.away_points
+          _standings[stat.division_name].teams[stat.id].frames += stat.away_frames
+          _standings[stat.division_name].teams[stat.id].matches.push({
+            home: false,
+            vs: stat.home_team,
+            vsId: stat.home_team_id,
+            pts: stat.away_points,
+            frames: stat.away_frames,
+            matchId: stat.match_id,
+          })
+        }
+      })
+      const __standings = Object.keys(_standings).map(key => _standings[key])
+      const standings = __standings.map(division => {
+        const _division = {...division}
+        _division.teams = Object.keys(division.teams).map(team => division.teams[team])
+        _division.teams.sort((a, b) => b.points - a.points || b.frames - a.frames)
+        return _division
+      })
+      await CacheSet(cacheKey, JSON.stringify(standings) )
+      return standings
+    }
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -4060,6 +4068,9 @@ async function FinalizeMatch(matchId) {
         score: rawCachedFrames,
       }
       await UpdateFinalizedMatch(matchId, toSaveMatch)
+      const currentSeason = (await GetCurrentSeason()).id
+      const cacheKey = 'league_standings_season' + currentSeason
+      await CacheDel(cacheKey)
 
       const finalizedMatchData = {
         matchInfo: matchInfo,

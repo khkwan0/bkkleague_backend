@@ -1518,7 +1518,10 @@ fastify.get('/stats/teams/:seasonId', async (req, reply) => {
 fastify.get('/stats/players/:seasonId', async (req, reply) => {
   try {
     const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
-    const stats = await GetLeaguePlayerStats(seasonId)
+    const singlesOnly = typeof req.query.singles !== 'undefined' && req.query.singles ? true : false
+    const doublesOnly = typeof req.query.doubles !== 'undefined' && req.query.doubles ? true : false
+    const minimumGames = typeof req.query.minimum !== 'undefined' && req.query.minimum ? parseInt(minimum, 10) : 1
+    const stats = await GetLeaguePlayerStats(seasonId, minimumGames, singlesOnly, doublesOnly)
     return stats
   } catch (e) {
     return []
@@ -3318,12 +3321,12 @@ async function GetTeams(season = null, useCache = false) {
     throw new Error(e)
   }
 }
-
-async function GetLeaguePlayerStats(_seasonId = null) {
+/*
+async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1) {
   try {
     const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
     let query = `
-      SELECT f.home_win, pf.home_team, p.id player_id, p.nickname name, ft.no_players
+      SELECT f.home_win, pf.home_team, p.id player_id, p.nickname name, ft.no_players, p.merged_with_id
       FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s, players p
       WHERE pf.frame_id=f.id
         AND pf.player_id=p.id
@@ -3336,10 +3339,11 @@ async function GetLeaguePlayerStats(_seasonId = null) {
     const rawStats = await DoQuery(query, [seasonId])
     const _stats = {}
     rawStats.forEach(stat => {
-      if (typeof _stats[stat.player_id] === 'undefined') {
-        _stats[stat.player_id] = {
+      const originalPlayerId = stat.merged_with_id > 0 ? stat.merged_with_id : stat.player_id
+      if (typeof _stats[originalPlayerId] === 'undefined') {
+        _stats[originalPlayerId] = {
           name: stat.name,
-          playerId: stat.player_id,
+          playerId: originalPlayerId,
           adjPlayed: 0,
           played: 0,
           won: 0,
@@ -3349,16 +3353,88 @@ async function GetLeaguePlayerStats(_seasonId = null) {
           adjPerfDisp: '0.00',
         }
       }
-      _stats[stat.player_id].played++
+      _stats[originalPlayerId].played++
       const no_players = stat.no_players
-      _stats[stat.player_id].adjPlayed += no_players === 2 ? 0.5 : 1.0
+      _stats[originalPlayerId].adjPlayed += no_players === 2 ? 0.5 : 1.0
       if (stat.home_win === stat.home_team) {
-        _stats[stat.player_id].won += no_players === 2 ? 0.5 : 1.0
+        _stats[originalPlayerId].won += no_players === 2 ? 0.5 : 1.0
       }
     })
     const stats = []
     Object.keys(_stats).forEach(key => {
-      if (_stats[key].played >= 1) {
+      if (_stats[key].played >= gamesRequired) {
+        const _stat = {..._stats[key]}
+        _stat.rawPerfDisp = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0).toFixed(2) : '0.00'
+        _stat.rawPerf = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0) : 0.00
+        _stat.adjPerf = _stat.rawPerf * ((_stat.played - 1)/_stat.played)
+        _stat.adjPerfDisp = _stat.adjPerf.toFixed(2)
+        stats.push(_stat)
+      }
+    })
+    stats.sort((a, b) => b.adjPerf - a.adjPerf)
+    const finalStats = stats.map((stat, index) => {
+      stat.rank = index + 1
+      return stat
+    })
+    return finalStats
+  } catch (e) {
+    console.log(e)
+  }
+}
+*/
+
+async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, singlesOnly = false, doublesOnly = false) {
+  try {
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    const cacheKey = `player_stats_s${seasonId}_g${gamesRequired}_${singlesOnly ? 'singles' : doublesOnly ? 'doubles' : 'all'}`
+    console.log(cacheKey)
+    let query = `
+      SELECT f.home_win, pf.home_team, p.id player_id, p.nickname name, ft.no_players, p.merged_with_id
+      FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s, players p
+      WHERE pf.frame_id=f.id
+        AND pf.player_id=p.id
+        AND f.frame_type_id=ft.id
+        AND f.match_id=m.id
+        AND m.division_id=d.id
+        AND d.season_id=s.id
+        AND s.id=?
+    `
+    if (singlesOnly) {
+      query += `
+        AND ft.no_players=1
+      `
+    } else if (doublesOnly) {
+      query += `
+        AND ft.no_players=2
+      `
+    }
+    const rawStats = await DoQuery(query, [seasonId])
+    const _stats = {}
+    rawStats.forEach(stat => {
+      const originalPlayerId = stat.merged_with_id > 0 ? stat.merged_with_id : stat.player_id
+      if (typeof _stats[originalPlayerId] === 'undefined') {
+        _stats[originalPlayerId] = {
+          name: stat.name,
+          playerId: originalPlayerId,
+          adjPlayed: 0,
+          played: 0,
+          won: 0,
+          rawPerf: 0.00,
+          rawPerfDisp: '0.00',
+          adjPerf: 0.00,
+          adjPerfDisp: '0.00',
+        }
+      }
+      _stats[originalPlayerId].played++
+      const no_players = stat.no_players
+      _stats[originalPlayerId].adjPlayed += no_players === 2 ? 0.5 : 1.0
+      if (stat.home_win === stat.home_team) {
+        _stats[originalPlayerId].won += no_players === 2 ? 0.5 : 1.0
+      }
+    })
+    const stats = []
+    Object.keys(_stats).forEach(key => {
+      if (_stats[key].played >= gamesRequired) {
         const _stat = {..._stats[key]}
         _stat.rawPerfDisp = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0).toFixed(2) : '0.00'
         _stat.rawPerf = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0) : 0.00

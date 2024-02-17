@@ -1520,10 +1520,12 @@ fastify.get('/stats/players/:seasonId', async (req, reply) => {
     const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
     const singlesOnly = typeof req.query.singles !== 'undefined' && req.query.singles ? true : false
     const doublesOnly = typeof req.query.doubles !== 'undefined' && req.query.doubles ? true : false
-    const minimumGames = typeof req.query.minimum !== 'undefined' && req.query.minimum ? parseInt(minimum, 10) : 1
-    const stats = await GetLeaguePlayerStats(seasonId, minimumGames, singlesOnly, doublesOnly)
+    const minimumGames = typeof req.query.minimum !== 'undefined' && req.query.minimum ? parseInt(req.query.minimum, 10) : 1
+    const gameType = typeof req.query.gameType !== 'undefined' && req.query.gameType ? req.query.gameType : ''
+    const stats = await GetLeaguePlayerStats(seasonId, minimumGames, gameType, singlesOnly, doublesOnly)
     return stats
   } catch (e) {
+    console.log(e)
     return []
   }
 })
@@ -3383,7 +3385,7 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1) {
 }
 */
 
-async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, singlesOnly = false, doublesOnly = false) {
+async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameType = '', singlesOnly = false, doublesOnly = false) {
   try {
     const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
     const cacheKey = `player_stats_s${seasonId}_g${gamesRequired}_${singlesOnly ? 'singles' : doublesOnly ? 'doubles' : 'all'}`
@@ -3408,7 +3410,13 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, singles
         AND ft.no_players=2
       `
     }
-    const rawStats = await DoQuery(query, [seasonId])
+
+    if (gameType) {
+      query += `
+        AND d.game_type=?
+      `
+    }
+    const rawStats = gameType ? await DoQuery(query, [seasonId, gameType]) : await DoQuery(query, [seasonId])
     const _stats = {}
     rawStats.forEach(stat => {
       const originalPlayerId = stat.merged_with_id > 0 ? stat.merged_with_id : stat.player_id

@@ -1480,10 +1480,11 @@ fastify.get('/match/stats/:matchId', async (req, reply) => {
       reply.code(404).send()
     } else {
       const stats = await GetMatchStats(matchId)
-      return stats
+      reply.code(200).send({status: 'ok', data: stats})
     }
   } catch (e) {
-    return []
+    console.log(e)
+    reply.code(500).send({status: 'error', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -4486,7 +4487,7 @@ async function GetMatchStats(matchId) {
           no_players: stat.no_players,
           homePlayers: [],
           awayPlayers: [],
-          home_win: stat.home_win === stat.home_team ? 1 : 0,
+          home_win: stat.home_win === 1 ? 1 : 0,
           homeTeam: {
             name: stat.home_team_name,
             id: stat.home_team_id ,
@@ -4534,6 +4535,7 @@ async function GetMatchStatsRaw(matchId) {
         ON hteam.id=x.home_team_id
       LEFT OUTER JOIN teams ateam
         ON ateam.id=x.away_team_id
+      ORDER BY x.f_id
     `
     const res = await DoQuery(query, [matchId])
     return res

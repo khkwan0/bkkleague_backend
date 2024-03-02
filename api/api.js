@@ -1473,6 +1473,22 @@ fastify.get('/stats/doubles', async (req, reply) => {
 
 })
 
+fastify.get('/stats/team/players/internal/:teamId', async (req, reply) => {
+  try {
+    const teamId = req.params.teamId ?? null
+    if (!teamId) {
+      reply.code(404).send()
+    } else {
+      const stats = await GetTeamPlayersStatsInternal(teamId)
+      console.log(stats)
+      reply.code(200).send({status: 'ok', data: stats})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', msg: 'Server error', error: 'server_error'})
+  }
+})
+
 fastify.get('/match/stats/:matchId', async (req, reply) => {
   try {
     const matchId = req.params.matchId ?? null
@@ -3487,6 +3503,7 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
       if (typeof _stats[match.away_team_id] === 'undefined') {
         _stats[match.away_team_id] = {
           name: match.away_team,
+          teamId: match.away_team_id,
           played: 0,
           won: 0,
           lost: 0,
@@ -3498,6 +3515,7 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
       if (typeof _stats[match.home_team_id] === 'undefined') {
         _stats[match.home_team_id] = {
           name: match.home_team,
+          teamId: match.home_team_id,
           played: 0,
           won: 0,
           lost: 0,
@@ -4469,6 +4487,86 @@ async function GetFrameTypes() {
     const res = await DoQuery(query, [])
     return res
   } catch (e) {
+    throw new Error(e)
+  }
+}
+
+async function GetTeamPlayersStatsInternal(teamId) {
+  try {
+    const stats = {}
+    const q0 = `
+      SELECT pf.player_id, f.id frame_id, f.home_win, ft.no_players, p.nickname, p.profile_picture
+      FROM matches m, frames f, players_frames pf, players p, frame_types ft
+      WHERE 
+        m.home_team_id=? AND
+        f.match_id=m.id AND
+        f.id=pf.frame_id AND
+        pf.home_team=1 AND
+        pf.player_id=p.id AND
+        f.frame_type_id=ft.id
+    `
+
+    const r0 = await DoQuery(q0, [teamId])
+
+    r0.forEach(row => {
+      if (typeof stats[row.player_id] === 'undefined') {
+        stats[row.player_id] = {
+          nickname: row.nickname,
+          profile_picture: row.profile_picture,
+          played: 0,
+          won: 0,
+          points: 0
+        }
+      }
+      stats[row.player_id].played++
+      if (row.home_win === 1) {
+        stats[row.player_id].won++
+        if (row.no_players === 2) {
+          stats[row.player_id].points += 0.5
+        } else {
+          stats[row.player_id].points += 1
+        }
+      }
+    })
+
+    const q1 = `
+      SELECT pf.player_id, f.id frame_id, f.home_win, ft.no_players, p.nickname, p.profile_picture
+      FROM matches m, frames f, players_frames pf, players p, frame_types ft
+      WHERE 
+        m.away_team_id=? AND
+        f.match_id=m.id AND
+        f.id=pf.frame_id AND
+        pf.home_team=0 AND
+        pf.player_id=p.id AND
+        f.frame_type_id=ft.id
+    `
+    const r1 = await DoQuery(q1, [teamId])
+
+    r1.forEach(row => {
+      if (typeof stats[row.player_id] === 'undefined') {
+        stats[row.player_id] = {
+          nickname: row.nickname,
+          profile_picture: row.profile_picture,
+          played: 0,
+          won: 0,
+          points: 0
+        }
+      }
+      stats[row.player_id].played++
+      if (row.home_win === 0) {
+        stats[row.player_id].won++
+        if (row.no_players === 2) {
+          stats[row.player_id].points += 0.5
+        } else {
+          stats[row.player_id].points += 1
+        }
+      }
+    })
+
+    const _stats = Object.keys(stats).map(playerId => stats[playerId]).sort((a, b) => b.points - a.points || b.frames - a.frames)
+    return _stats
+  } catch (e) {
+    console.log(e)
     throw new Error(e)
   }
 }

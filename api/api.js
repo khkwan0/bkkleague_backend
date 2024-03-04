@@ -3526,8 +3526,8 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
       }
       _stats[match.away_team_id].played++
       _stats[match.home_team_id].played++
-      _stats[match.away_team_id].frames += match.home_frames
-      _stats[match.home_team_id].frames += match.away_frames
+      _stats[match.away_team_id].frames += match.away_frames
+      _stats[match.home_team_id].frames += match.home_frames
       if (match.home_frames > match.away_frames) {
         _stats[match.home_team_id].won++
         _stats[match.away_team_id].lost++

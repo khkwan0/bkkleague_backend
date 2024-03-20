@@ -2839,6 +2839,7 @@ async function GetPlayersByTeamId(teamId, active = true) {
       SELECT players.*, players_teams.team_role_id as team_role_id
       FROM players_teams, players
       WHERE players_teams.team_id=?
+      AND players.merged_with_id=0
       AND players_teams.active=1
       AND players_teams.player_id=players.id
     `
@@ -2848,6 +2849,7 @@ async function GetPlayersByTeamId(teamId, active = true) {
         SELECT players.*, players_teams.team_role_id as team_role_id
         FROM players_teams, players
         WHERE players_teams.team_id=?
+        AND players.merged_with_id=0
         AND players_teams.player_id=players.id
       `
     }
@@ -5250,7 +5252,8 @@ async function GetPlayersByTeamIdFlat(teamId, activeOnly = false) {
         p.lastName as lastName,
         p.profile_picture as avatar
       FROM players_teams pt, players p
-      WHERE team_id=?
+      WHERE p.merged_with_id=0
+      AND team_id=?
       AND pt.player_id=p.id
       ORDER BY nickname
     `
@@ -5264,6 +5267,7 @@ async function GetPlayersByTeamIdFlat(teamId, activeOnly = false) {
           p.profile_picture as avatar
         FROM players_teams pt, players p
         WHERE team_id=?
+        AND p.merged_with_id=0
         AND pt.player_id=p.id
         AND pt.active=1
         ORDER BY nickname
@@ -5369,7 +5373,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
         `
         params.push(today)
       } else {
-        // get all team matches
+        fastify.log.info("on team, show postponed")
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
           FROM (

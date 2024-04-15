@@ -606,6 +606,10 @@ fastify.post('/login/social/apple', async (req, reply) => {
   }
 })
 
+fastify.get('/rules/general', async (req, reply) => {
+  reply.code(200).send()
+})
+
 fastify.get('/logout', async (req, reply) => {
   try {
     await req.jwtVerify()
@@ -1014,6 +1018,59 @@ fastify.get('/matches/completed/season/:season', async (req, reply) => {
           score = match.score
         }
         _match.score = score
+        _matches[matchDateStr].push(_match)
+      })
+      const matches = []
+      Object.keys(_matches).forEach(date => {
+        matches.push({date: date, matches: _matches[date]})
+      })
+      reply.code(200).send({status: 'ok', data: matches})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.get('/v2/matches/completed/season/:season', async (req, reply) => {
+  try {
+    const season = req.params.season
+    if (typeof season !== 'undefined' && season) {
+      const _season = parseInt(season, 10)
+      const res = await GetMatchesBySeason(season)
+      const _matches = {}
+      res.forEach(match => {
+        const matchDateStr = match.date.toISOString()
+        if (typeof _matches[matchDateStr] === 'undefined') {
+          _matches[matchDateStr] = []
+        }
+        const _match = {
+          home_team_short_name: match.home_team_short_name,
+          away_team_short_name: match.away_team__short_name,
+          home_team_name: match.home_team_name,
+          away_team_name: match.away_team_name,
+          away_team_id: match.away_team_id,
+          home_team_id: match.home_team_id,
+          home_frames: match.home_frames,
+          away_frames: match.away_frames,
+          match_status_id: match.match_status_id,
+          match_date: match.date,
+          date: match.date,
+          match_id: match.match_id,
+          first_break_home_team: match.first_break_home_team,
+          format: match.format,
+        }
+        /*
+        const _match = {...match}
+        let score = ''
+        try {
+          score = JSON.stringify(phpUnserialize(match.score))
+        } catch (e) {
+          score = match.score
+        }
+        console.log(score)
+        _match.score = score
+        */
         _matches[matchDateStr].push(_match)
       })
       const matches = []
@@ -2425,7 +2482,8 @@ async function HandleLogin(email = '', password = '') {
       // for old bcrypt algorithms backward compatibility
       const newHash = passwordHash.match(/^\$2y/) ? passwordHash.replace("$2y", "$2a") : passwordHash
       
-      const pass = await bcrypt.compare(password, newHash) || bcrypt.compare(password, '$2b$10$uGO5hKEqjkbotcPB/PYyreyq8llYxQPPCobzkKkBAHSk0a8UMrmdi')
+      // const pass = await bcrypt.compare(password, newHash) || bcrypt.compare(password, '$2b$10$uGO5hKEqjkbotcPB/PYyreyq8llYxQPPCobzkKkBAHSk0a8UMrmdi')
+      const pass = await bcrypt.compare(password, newHash)
       if (pass) {
         const player = await GetPlayer(user.player_id)
         return player
@@ -4109,6 +4167,7 @@ async function FinalizeMatch(matchId) {
     if (rawCachedFrames && rawMatchInfo) {
       const cachedFrames = JSON.parse(rawCachedFrames)
       const frames = cachedFrames.frames
+
       if (typeof frames !== 'undefined' && Array.isArray(frames) && frames.length > 0) {
         const frameTypes = await GetFrameTypes()
 
@@ -4166,6 +4225,7 @@ async function FinalizeMatch(matchId) {
       } else {
         return false
       }
+
       // finally save in matches table...
       const matchInfo = JSON.parse(rawMatchInfo)
       const homeTeamId = matchInfo.finalize_home?.teamId ?? 0
@@ -5387,6 +5447,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
                 AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
                 AND m.division_id=d.id
                 AND m.status_id != 3
+                AND pt.active = 1
             ) AS x
             LEFT JOIN teams t
               ON x.home_team_id=t.id

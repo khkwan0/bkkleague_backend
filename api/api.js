@@ -610,6 +610,17 @@ fastify.get('/rules/general', async (req, reply) => {
   reply.code(200).send()
 })
 
+fastify.get('/gametypes', async (req, reply) => {
+  try {
+    const q0 = `SELECT * FROM game_types`
+    const r0 = await DoQuery(q0, [])
+    reply.code(200).send(r0)
+  } catch (e) {
+    console.log(e)
+    reply.code(400).send()
+  }
+})
+
 fastify.get('/logout', async (req, reply) => {
   try {
     await req.jwtVerify()
@@ -819,7 +830,7 @@ fastify.get('/user', async (req, reply) => {
 fastify.get('/season', async (req, reply) => {
   try {
     const res = await GetActiveSeason()
-    reply.code(200).send({season: res[0].id})
+    reply.code(200).send({season: res[0].identifier})
   } catch (e) {
     reply.code(500).send() 
   }
@@ -1152,7 +1163,7 @@ fastify.get('/matches', async (req, reply) => {
     const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
     const userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
     const res = completed ?
-      await GetMatchesBySeason((await GetCurrentSeason()).id)
+      await GetMatchesBySeason((await GetCurrentSeason()).identifier)
       :
       await GetUncompletedMatches(userid, _newonly, noteam)
 
@@ -1180,7 +1191,7 @@ fastify.get('/matches', async (req, reply) => {
       })
       return matches
     } else {
-      const currentSeason = (await GetCurrentSeason()).id
+      const currentSeason = (await GetCurrentSeason()).identifier
       // format for season 10 is in php serialized form, convert to json
       const _res = res.map(match => {
         if (currentSeason > 10) {
@@ -1922,8 +1933,12 @@ fastify.post('/admin/season/new', async (req, reply) => {
   try {
     if (req.user.user.isAdmin) {
       const {name, shortName, description} = req.body
-      if (name && shortName) {
-        const res = await SaveNewSeason(name, shortName, description)
+      if (name) {
+        let _shortName = shortName
+        if (!shortName) {
+          _shortName = name
+        }
+        const res = await SaveNewSeason(name, _shortName, description)
         LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
         reply.code(200).send(res)
       } else {
@@ -2745,19 +2760,18 @@ async function GetActiveSeason() {
 
 async function SaveNewSeason(name = '', shortName = '', description = '') {
   try {
-    if (name && shortName) {
+    const q0 = `
+      SELECT * FROM seasons ORDER BY id desc
+    `
+    const r0 = await DoQuery(q0, [])
+    let lastSeasonNumber = r0[0].identifier
+    if (name && shortName && lastSeasonNumber) {
+      const newSeasonNumber = lastSeasonNumber + 1
       let query = `
-        INSERT INTO seasons (name, short_name, description)
-        VALUES (?, ?, ?)
+        INSERT INTO seasons (name, short_name, sortorder, description, identifier)
+        VALUES (?, ?, ?, ?, ?)
       `
-      const res = await DoQuery(query, [name, shortName, description])
-      const insertId = res.insertId
-      query = `
-        UPDATE seasons
-        SET sortorder=?, identifier=?
-        WHERE id=?
-      `
-      const res2 = await DoQuery(query, [insertId, insertId.toString(), insertId])
+      const res = await DoQuery(query, [name, shortName, newSeasonNumber, description, newSeasonNumber])
       return {status: 'ok'}
     } else {
       return {status: 'error', error: 'invalid_parameters'}
@@ -2830,7 +2844,7 @@ async function GetAllVenues() {
 
 async function GetVenues() {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     const key = 'venues'
     const res = null //await CacheGet(key)
     if (res) {
@@ -2978,7 +2992,7 @@ async function GetRawPlayerInfo(playerId) {
 
 async function GetPlayerInfo(playerId) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let query = `
       SELECT *, p.id player_id, c.name_en cn_en, c.name_th cn_th
       FROM players p, countries c
@@ -3017,7 +3031,7 @@ async function GetPlayerInfo(playerId) {
 
 async function GetPlayerStatsInfo(playerId) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let query = `
       SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, players.gender_id gender, players.language lang, players.profile_picture pic, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt, players.nationality_id as nationality
       FROM players_frames, players, frames, matches, divisions, seasons
@@ -3152,7 +3166,7 @@ async function GetPlayerStatsInfo(playerId) {
 
 async function AddNewTeam(name, venueId) {
   try {
-    const seasonId = (await GetCurrentSeason()).id
+    const seasonId = (await GetCurrentSeason()).identifier
     const q0 =  `
       INSERT INTO teams(name, short_name, very_short_name, division_id, venue_id, season_id)
       VALUES(?, ?, ?, ?, ?, ?)
@@ -3427,6 +3441,7 @@ async function GetTeams(season = null, useCache = false) {
           ORDER BY teams.short_name
         `
         teams = await DoQuery(query, [])
+        console.log(teams)
       }
       let i = 0
       while (i < teams.length) {
@@ -3447,7 +3462,7 @@ async function GetTeams(season = null, useCache = false) {
 /*
 async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1) {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     let query = `
       SELECT f.home_win, pf.home_team, p.id player_id, p.nickname name, ft.no_players, p.merged_with_id
       FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s, players p
@@ -3508,7 +3523,7 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1) {
 
 async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameType = '', singlesOnly = false, doublesOnly = false) {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     const cacheKey = `player_stats_s${seasonId}_g${gamesRequired}_${singlesOnly ? 'singles' : doublesOnly ? 'doubles' : 'all'}`
     console.log(cacheKey)
     let query = `
@@ -3585,7 +3600,7 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameTyp
 
 async function GetTeamStats(_seasonId = null, gameType = '8b') {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     let query = `
       SELECT ta.short_name away_team, th.short_name home_team, x.home_frames, x.away_frames, x.home_points, x.away_points, x.score, x.date, x.home_team_id, x.away_team_id, x.match_id
       FROM (
@@ -3665,7 +3680,7 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
 
 async function GetStandings(_seasonId = null) {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).id
+    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     const cacheKey = 'league_standings_season' + seasonId
     const cachedStandings = await CacheGet(cacheKey)
     if (cachedStandings) {
@@ -3946,7 +3961,7 @@ async function SaveMatchUpdateHistory(data) {
 // add existing player to team
 async function AddPlayerToTeam(playerId, teamId) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     const q0 = `
       SELECT count(*) as count
       FROM players_teams
@@ -3979,7 +3994,7 @@ async function AddPlayerToTeam(playerId, teamId) {
 
 async function SaveNewPlayer(newPlayer) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     const {nickName, firstName, lastName, email, teamId} = newPlayer
     let query = `
       INSERT INTO players (nickname, firstname, lastname, email, merged_with_id)
@@ -4287,7 +4302,7 @@ async function FinalizeMatch(matchId) {
         score: rawCachedFrames,
       }
       await UpdateFinalizedMatch(matchId, toSaveMatch)
-      const currentSeason = (await GetCurrentSeason()).id
+      const currentSeason = (await GetCurrentSeason()).identifier
       const cacheKey = 'league_standings_season' + currentSeason
       await CacheDel(cacheKey)
 
@@ -4537,7 +4552,7 @@ async function GetPlayer(playerId) {
       const playerRes = await DoQuery(query, [playerId])
       let player = null
       if (typeof playerRes[0] !== 'undefined') {
-        const seasonId = (await GetCurrentSeason()).id
+        const seasonId = (await GetCurrentSeason()).identifier
         if (playerRes[0].merged_with_id !== 0) {
           query = `
             SELECT *
@@ -4787,7 +4802,7 @@ async function GetMatchPerformance(playerId) {
 }
 async function GetMatchPerformanceRaw(playerId) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let query = `
       SELECT m.id, pf.home_team, f.home_win, m.date, ft.no_players, count(*) count
       FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s
@@ -4840,7 +4855,7 @@ async function GetDoublesStats(playerId) {
 
 async function GetDoublesStatsRaw(playerId) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let query = `
       SELECT x.*, p.nickname
       FROM
@@ -4873,7 +4888,7 @@ async function GetDoublesStatsRaw(playerId) {
 
 async function GetPlayerStats(playerId) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let query = `
       SELECT pf.player_id player_id, ft.name game_type, ft.game_type_id, ft.no_players no_players, s.name, pf.home_team, f.home_win
       FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s
@@ -5070,7 +5085,7 @@ async function GetAllUniquePlayers() {
 /*
 async function GetAllUniquePlayers() {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let query = `
       SELECT players.nickname as player_name, players.firstname firstname, players.lastname lastname, countries.iso_3166_1_alpha_2_code country, countries.name_en cn_en, countries.name_th cn_th, players.gender_id gender, players.language lang, players.profile_picture pic, players_frames.home_team as is_home, players.id p_id, divisions.name as division, matches.home_team_id as htid, matches.away_team_id as atid, seasons.name as season, seasons.id s_id, count(*) as cnt
       FROM players_frames, players, frames, matches, divisions, seasons, countries
@@ -5154,7 +5169,7 @@ async function GetAllUniquePlayers() {
 
 async function GetAllPlayers(activeOnly = true) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     /*
     if (activeOnly) {
       query = `
@@ -5286,7 +5301,7 @@ async function GetGameTypes() {
 
 async function GetPlayersTeamPlayers(activeOnly = true) {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     let q0 = `
       SELECT p.*
       FROM players p, players_teams pt
@@ -5378,7 +5393,7 @@ async function GetMatchesBySeason(season) {
 
 async function GetPostponedMatches() {
   try {
-    const currentSeason = (await GetCurrentSeason()).id
+    const currentSeason = (await GetCurrentSeason()).identifier
     const q0 = `
       SELECT m.*
       FROM matches m, divisions d, teams
@@ -5423,6 +5438,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
                 AND m.division_id=d.id
                 AND m.status_id != 3
                 AND pt.active = 1
+                AND d.season_id = ?
             ) AS x
             LEFT JOIN teams t
               ON x.home_team_id=t.id
@@ -5431,7 +5447,9 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
             ON y.away_team_id=tt.id
           ORDER BY y.date
         `
+        const currentSeason = (await GetCurrentSeason()).identifier
         params.push(today)
+        params.push(currentSeason)
       } else {
         fastify.log.info("on team, show postponed")
         query = `
@@ -5448,6 +5466,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
                 AND m.division_id=d.id
                 AND m.status_id != 3
                 AND pt.active = 1
+                AND d.season_id = ?
             ) AS x
             LEFT JOIN teams t
               ON x.home_team_id=t.id
@@ -5456,6 +5475,8 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
             ON y.away_team_id=tt.id
           ORDER BY y.date
         `
+        const currentSeason = (await GetCurrentSeason()).identifier
+        params.push(currentSeason)
       }
     } else if (typeof newonly !== 'undefined' && newonly === true) {
       /*
@@ -5509,6 +5530,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
               AND teams.venue_id=v.id
               AND m.division_id=d.id
               AND m.status_id != 3
+              AND d.season_id = ?
           ) AS x
           LEFT JOIN teams t
             ON x.home_team_id=t.id
@@ -5517,6 +5539,8 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
           ON y.away_team_id=tt.id
         ORDER BY y.date
       `
+      const currentSeason = (await GetCurrentSeason()).identifier
+      params.push(currentSeason)
     }
     const res = await DoQuery(query, params)
     return res

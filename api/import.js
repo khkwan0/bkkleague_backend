@@ -32,26 +32,25 @@ async function main() {
   let i = 0
   let rounds = {}
   while (i < fixtures.length) {
-    let div = 61
+    let div = 67
     switch (fixtures[i].A) {
-      case '8B A': div = 58; break
-      case '8B B': div = 59; break
-      case '9B A': div = 60; break
+      case '9B A': div = 64; break
+      case '9B B': div = 65; break
       default: break
     }
 
     if (typeof rounds[div] === 'undefined') {
-      rounds[div] =  process.argv[2]
+      rounds[div] =  parseInt(process.argv[2], 10)
     } else {
       rounds[div] = rounds[div] + 1
     }
 
     let date = null
     try {
-      date = DateTime.fromFormat(fixtures[i].B, "dd/MM/yyyy").toFormat("yyyy/MM/dd")
+      date = DateTime.fromFormat(fixtures[i].B, "MM/dd/yyyy").plus({'days': 1}).toFormat("yyyy-MM-dd")
       // date = DateTime.fromFormat(fixtures[i].B, "dd/MM/yyyy").toFormat("yyyy/MM/dd")
     } catch (e) {
-      date = DateTime.fromJSDate(fixtures[i].B).toFormat("yyyy/dd/MM")
+      date = DateTime.fromJSDate(fixtures[i].B).plus({'days': 1}).toFormat("yyyy-MM-dd")
     }
     let j = 0
     let home_team_id = 0

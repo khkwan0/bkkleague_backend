@@ -827,6 +827,16 @@ fastify.get('/user', async (req, reply) => {
   }
 })
 
+fastify.get('/rules', async (req, reply) => {
+  try {
+    const q0 = `SELECT * FROM rules`
+    const r0 = await DoQuery(q0, [])
+    reply.code(200).send({status: 'ok', data: r0})
+  } catch (e) {
+    reply.code(500).send()
+  }
+})
+
 fastify.get('/season', async (req, reply) => {
   try {
     const res = await GetActiveSeason()
@@ -1627,7 +1637,7 @@ fastify.get('/league/standings/:seasonId', async (req, reply) => {
 
 fastify.post('/player', async (req, reply) => {
   try {
-    if (typeof req.body.nickName !== 'undefined' && req.body.nickName.length > 2) {
+    if (typeof req.body.nickName !== 'undefined' && req.body.nickName.length > 1) {
       const _res = await SaveNewPlayer(req.body)
       return {status: 'ok', data: {playerId: _res.playerId}}
     } else {

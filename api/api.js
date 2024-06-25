@@ -973,6 +973,134 @@ fastify.register((fastify, options, done) => {
     }
   })
 
+  fastify.get('/matches', {
+    schema: {
+      description: 'Get active season matches',
+      querystring: {
+        newonly: {type: 'string', description: 'Set to "true" for matches with dates today or later'},
+      },
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const {newonly, noteam, completed} = req.query
+        const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
+        const userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
+        const res = completed ?
+          await GetMatchesBySeason((await GetCurrentSeason()).identifier)
+          :
+          await GetUncompletedMatches(userid, _newonly, noteam)
+
+        // lets group the matches by date for the presentation layer
+        if (completed) {
+          const _matches = {}
+          res.forEach(match => {
+            const matchDateStr = match.date.toISOString()
+            if (typeof _matches[matchDateStr] === 'undefined') {
+              _matches[matchDateStr] = []
+            }
+            const _match = {...match}
+            let score = ''
+            try {
+              score = JSON.stringify(phpUnserialize(match.score))
+            } catch (e) {
+              score = match.score
+            }
+            _match.score = score
+            _matches[matchDateStr].push(_match)
+          })
+          const matches = []
+          Object.keys(_matches).forEach(date => {
+            matches.push({date: date, matches: _matches[date]})
+          })
+          return matches
+        } else {
+          const currentSeason = (await GetCurrentSeason()).identifier
+          // format for season 10 is in php serialized form, convert to json
+          const _res = res.map(match => {
+            if (currentSeason > 10) {
+            } else {
+              match.format = JSON.stringify(phpUnserialize(match.format))
+            }
+            if (typeof match.logo !== 'undefined' && match.logo) {
+              match.logo = 'https://api.bkkleague.com/logos/' + match.logo
+            }
+            return match
+          })
+          return _res
+        }
+      } catch (e) {
+        console.log(e)
+        return []
+      }
+    }
+  })
+
+  fastify.get('/match/:matchId', {
+    schema: {
+      description: 'Get match INFO by id',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const res = await GetMatchInfo(req.params.matchId)
+        return {status: 'ok', data: res}
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'err', msg: 'Server error'})
+      }
+    }
+  })
+
+  fastify.get('/frames/:matchId', {
+    schema: {
+      summary: 'Get frames info',
+      description: 'Can get live scores for unfinalized matches here',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const res = await GetFrames(req.params.matchId)
+        return {status: 'ok', data: res}
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'err', msg: 'Server error'})
+      }
+    }
+  })
+
+
+
+  fastify.get('/matches/season/:seasonId', {
+    schema: {
+      description: 'Get matches (FULL info) for season',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const seasonId = req.params.seasonId
+        const res = await GetMatchesBySeason(seasonId)
+        const _matches = {}
+        res.forEach(match => {
+          const matchDateStr = match.date.toISOString()
+          if (typeof _matches[matchDateStr] === 'undefined') {
+            _matches[matchDateStr] = []
+          }
+          _matches[matchDateStr].push(match)
+        })
+        const matches = []
+        Object.keys(_matches).forEach(date => {
+          matches.push({date: date, matches: _matches[date]})
+        })
+        reply.code(200).send({status: 'ok', data: matches})
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'error', error: 'server_error'})
+      }
+    }
+  })
+
+
 	fastify.get('/teams/:season', {
 		schema: {
       description: 'Get all teams and players in the team',
@@ -1176,29 +1304,6 @@ fastify.get('/v2/matches/completed/season/:season', async (req, reply) => {
   }
 })
 
-fastify.get('/matches/season/:seasonId', async (req, reply) => {
-  try {
-    const seasonId = req.params.seasonId
-    const res = await GetMatchesBySeason(seasonId)
-    const _matches = {}
-    res.forEach(match => {
-      const matchDateStr = match.date.toISOString()
-      if (typeof _matches[matchDateStr] === 'undefined') {
-        _matches[matchDateStr] = []
-      }
-      _matches[matchDateStr].push(match)
-    })
-    const matches = []
-    Object.keys(_matches).forEach(date => {
-      matches.push({date: date, matches: _matches[date]})
-    })
-    reply.code(200).send({status: 'ok', data: matches})
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'})
-  }
-})
-
 fastify.get('/match/info/full/:matchId', async (req, reply) => {
   const matchId = req.params.matchId
   if (typeof matchId !== 'undefined' && matchId) {
@@ -1224,70 +1329,6 @@ fastify.get('/match/info/full/:matchId', async (req, reply) => {
     reply.code(200).send({status: 'ok', data: r0[0]})
   } else {
     reply.code(400).send({status: 'error', error: 'invalid_params'})
-  }
-})
-fastify.get('/matches', async (req, reply) => {
-  /*
-  let userid = null
-  let verifiedJWT = false
-  try {
-    await req.jwtVerify()
-    verifiedJWT = true
-  } catch (e) {
-    fastify.log.info('Invalid JWT')
-  }
-  */
-
-  try {
-    const {newonly, noteam, completed} = req.query
-    const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
-    const userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
-    const res = completed ?
-      await GetMatchesBySeason((await GetCurrentSeason()).identifier)
-      :
-      await GetUncompletedMatches(userid, _newonly, noteam)
-
-    // lets group the matches by date for the presentation layer
-    if (completed) {
-      const _matches = {}
-      res.forEach(match => {
-        const matchDateStr = match.date.toISOString()
-        if (typeof _matches[matchDateStr] === 'undefined') {
-          _matches[matchDateStr] = []
-        }
-        const _match = {...match}
-        let score = ''
-        try {
-          score = JSON.stringify(phpUnserialize(match.score))
-        } catch (e) {
-          score = match.score
-        }
-        _match.score = score
-        _matches[matchDateStr].push(_match)
-      })
-      const matches = []
-      Object.keys(_matches).forEach(date => {
-        matches.push({date: date, matches: _matches[date]})
-      })
-      return matches
-    } else {
-      const currentSeason = (await GetCurrentSeason()).identifier
-      // format for season 10 is in php serialized form, convert to json
-      const _res = res.map(match => {
-        if (currentSeason > 10) {
-        } else {
-          match.format = JSON.stringify(phpUnserialize(match.format))
-        }
-        if (typeof match.logo !== 'undefined' && match.logo) {
-          match.logo = 'https://api.bkkleague.com/logos/' + match.logo
-        }
-        return match
-      })
-      return _res
-    }
-  } catch (e) {
-    console.log(e)
-    return []
   }
 })
 
@@ -1789,26 +1830,6 @@ fastify.get('/team/division/:season', async (req, reply) => {
     }
   } catch (e) {
     return {status: 'error', msg: 'server_error'}
-  }
-})
-
-fastify.get('/frames/:matchId', async (req, reply) => {
-  try {
-    const res = await GetFrames(req.params.matchId)
-    return {status: 'ok', data: res}
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send({status: 'err', msg: 'Server error'})
-  }
-})
-
-fastify.get('/match/:matchId', async (req, reply) => {
-  try {
-    const res = await GetMatchInfo(req.params.matchId)
-    return {status: 'ok', data: res}
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send({status: 'err', msg: 'Server error'})
   }
 })
 

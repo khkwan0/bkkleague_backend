@@ -2424,8 +2424,26 @@ function ValidateFinalize(home, away) {
 }
 
 // Make sure only members with correct secret tokens can validate
-function ValidateIncoming(data) {
-  return true
+async function ValidateIncoming(data) {
+  try {
+    if (typeof data.jwt !== 'undefined' && data.jwt) {
+      const jwt = fastify.jwt.decode(data.jwt)
+      const token = jwt.token
+      if (typeof token !== 'undefined' && token) {
+        const user = await GetPlayerFromToken(token)
+        const matchPlayers= await GetMatchPlayers(data.matchId)
+        const player = matchPlayers.find(player => player.player_id === user.playerId)
+        return true
+      } else {
+        return true
+        // return false -- awaiting client update
+      }
+    }
+  } catch (e) {
+    console.log(e)
+    return true
+    // return false
+  }
 }
 
 async function GetTeamRoleId(userId, teamId) {
@@ -2698,6 +2716,23 @@ async function GetMatchInfo(matchId) {
       }
     })
     return matchInfo
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetMatchPlayers(matchId) {
+  try {
+    const q0 = `
+      SELECT pt.player_id, p.*
+      FROM matches m, players_teams as pt, players p
+      WHERE m.id=4402
+      AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
+      AND pt.player_id=p.id
+    `
+    const r0 = await DoQuery(q0, [matchId])
+    return r0
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -5545,7 +5580,8 @@ fastify.ready().then(() => {
     socket.on('matchupdate', async data => {
       try {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
-        if (ValidateIncoming(data)) {
+        if (await ValidateIncoming(data)) {
+          console.log('valddate')
           if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {

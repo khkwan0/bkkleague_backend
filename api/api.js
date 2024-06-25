@@ -2438,6 +2438,8 @@ async function ValidateIncoming(data) {
         return true
         // return false -- awaiting client update
       }
+    } else {
+      return true
     }
   } catch (e) {
     console.log(e)

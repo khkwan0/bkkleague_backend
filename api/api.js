@@ -1,33 +1,27 @@
-import Fastify from 'fastify'
-import fastifyIO from 'fastify-socket.io'
-import fastifyJWT from '@fastify/jwt'
-// import {MongoClient} from 'mongodb'
-import * as dotenv from 'dotenv'
-import * as mysql from 'mysql2'
-import * as mysqlp from 'mysql2/promise'
-import phpUnserialize from 'phpunserialize'
-import AsyncLock from 'async-lock'
-import {createClient} from 'redis'
-import crypto from 'crypto'
-import {DateTime} from 'luxon'
-import bcrypt from 'bcrypt'
-import countries from './countries.emoji.json' assert {type: 'json'}
-import fs from 'fs'
-import fetch from 'node-fetch'
-import fastifyFormBody from '@fastify/formbody'
-import fastifyMultipart from '@fastify/multipart'
-import nodemailer from 'nodemailer'
-import verifyAppleToken from 'verify-apple-id-token'
-import {initializeApp} from 'firebase-admin/app'
-import {getMessaging} from 'firebase-admin/messaging'
-import admin from 'firebase-admin'
-import {copyFile} from 'node:fs/promises'
+const fastify = require('fastify')({logger: true, trustProxy: true})
+const fastifyIO = require('fastify-socket.io')
+const fastifyJWT = require('@fastify/jwt')
+const mysql = require('mysql2')
+const mysqlp = require('mysql2/promise')
+const phpUnserialize = require('phpunserialize')
+const AsyncLock = require('async-lock')
+const {createClient} = require('redis')
+const crypto = require('crypto')
+const {DateTime} = require('luxon')
+const bycrypt = require('bcrypt')
+const countries = require('./countries.emoji.json')
+const fs = require('fs')
+const fetch = require('node-fetch')
+const fastifyFormBody = require('@fastify/formbody')
+const fastifyMultipart = require('@fastify/multipart')
+const nodemailer = require('nodemailer')
+const verifyAppleToken = require('verify-apple-id-token')
+const {initializeApp} = require('firebase-admin/app')
+const {getMessaging} = require('firebase-admin/messaging')
+const admin = require('firebase-admin')
+const {copyFile} = require('node:fs/promises')
 
-dotenv.config()
-const fastify = Fastify({
-  trustProxy: true,
-  logger: true,
-})
+require('dotenv').config()
 fastify.register(fastifyJWT, {secret: process.env.JWT_SECRET})
 fastify.register(fastifyFormBody)
 fastify.register(fastifyMultipart, {
@@ -42,6 +36,38 @@ fastify.register(fastifyMultipart, {
 const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
 */
+
+;(async () => {
+await fastify.register(require('@fastify/swagger'), {
+  openapi: {
+    openapi: '3.0.0',
+    info: {
+      title: 'BKK League swagger',
+      description: 'BKK League API',
+      version: '0.1.0'
+    },
+  }
+})
+})()
+fastify.register(require('@fastify/swagger-ui'), {
+  routePrefix: '/docs',
+  uiConfig: {
+    docExpansion: 'full', // expand/not all the documentations none|list|full
+    deepLinking: false,
+  },
+  uiHooks: {
+    onRequest: function(request, reply, next) {
+      next()
+    },
+    preHandler: function(request, reply, next) {
+      next()
+    }
+  },
+  staticCSP: false,
+  transformStaticCSP: (header) => header,
+  transformSpecification: (swaggerObject, request, reply) => { return swaggerObject },
+  transformSpecificationClone: true,
+})
 
 
 const lock = new AsyncLock()
@@ -83,7 +109,7 @@ const transporter = nodemailer.createTransport({
   }
 })
 
-import firebaseAccount from './bangkok-pool-league-b8100-firebase-adminsdk-c8zuk-b93d8193a2.json' assert {type: 'json'}
+const firebaseAccount = require('./bangkok-pool-league-b8100-firebase-adminsdk-c8zuk-b93d8193a2.json')
 admin.initializeApp({
   credential: admin.credential.cert(firebaseAccount),
 })
@@ -846,15 +872,6 @@ fastify.get('/season', async (req, reply) => {
   }
 })
 
-fastify.get('/v2/season', async (req, reply) => {
-  try {
-    const res = await GetActiveSeason()
-    reply.code(200).send(res)
-  } catch (e) {
-    reply.code(500).send() 
-  }
-})
-
 fastify.get('/seasons', async (req, reply) => {
   try {
     const res = await GetAllSeasons()
@@ -915,16 +932,6 @@ fastify.get('/teams', async (req, reply) => {
   }
 })
 
-fastify.get('/teams/:season', async (req, reply) => {
-  try {
-    const season = req.params.season ?? null
-    const res = await GetTeams(season)
-    return {status: 'ok', data: res}
-  } catch (e) {
-    reply.code(500).send() 
-  }
-})
-
 fastify.get('/divisions/:season', async (req, reply) => {
   try {
     const season = req.params.season ?? null
@@ -932,15 +939,6 @@ fastify.get('/divisions/:season', async (req, reply) => {
     return {status: 'ok', data: res}
   } catch (e) {
     reply.code(500).send() 
-  }
-})
-
-fastify.get('/team/:teamId', async (req, reply) => {
-  try {
-    const res = await GetTeamInfo(req.params.teamId)
-    return res
-  } catch (e) {
-    reply.code(500).send()
   }
 })
 
@@ -958,55 +956,127 @@ fastify.get('/game/types', async (req, reply) => {
   }
 })
 
-fastify.get('/scores/live', async (req, reply) => {
-  try {
-    const q0 = `
-      SELECT m.id, m.home_team_id, m.away_team_id, h.name home_name, a.name away_name
-      FROM matches m, teams h, teams a
-      WHERE date >= ?
-      AND date < ?
-      AND m.home_team_id=h.id
-      AND m.away_team_id=a.id
-    `
-    const startDate = DateTime.now().toFormat('yyyy-MM-dd')
-    const endDate = DateTime.now().plus({days: 2}).toFormat('yyyy-MM-dd')
-    const r0 = await DoQuery(q0, [startDate, endDate])
-    const matches = {}
-    const promises = []
-    r0.forEach(match => {
-      matches[match.id] = match
-      matches[match.id].homeScore = 0
-      matches[match.id].awayScore = 0
-      const key = `match_${match.id}`
-      promises.push(CacheGet(key))
-    })
-    const res = await Promise.all(promises)
-    res.forEach(_liveMatch => {
-      if (_liveMatch) {
-        const liveMatch = JSON.parse(_liveMatch)
-        if (typeof liveMatch.frames !== 'undefined' && Array.isArray(liveMatch.frames)) {
-          let homeScore = 0
-          let awayScore = 0
-          liveMatch.frames.forEach(frame => {
-            if (typeof frame.winner && frame.winner > 0) {
-              if (frame.winner === matches[liveMatch.matchId].home_team_id) {
-                homeScore++
-              } else {
-                awayScore++
-              }
-            }
-          })
-          matches[liveMatch.matchId].homeScore = homeScore
-          matches[liveMatch.matchId].awayScore = awayScore
-        }
+fastify.register((fastify, options, done) => {
+
+  fastify.get('/v2/season', {
+    schema: {
+      description: 'Get current active season',
+      tags: ['Season'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const res = await GetActiveSeason()
+        reply.code(200).send(res)
+      } catch (e) {
+        reply.code(500).send() 
       }
-    })
-    const scores = Object.keys(matches).map(matchId => matches[matchId])
-    reply.code(200).send({status: 'ok', data: scores})
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send()
-  }
+    }
+  })
+
+	fastify.get('/teams/:season', {
+		schema: {
+      description: 'Get all teams and players in the team',
+      querystring: {
+        short: {type: 'number', description: 'Set to 1 for teams only (no player data).'},
+      },
+      tags: ['Teams'],
+		},
+    handler: async (req, reply) => {
+      try {
+        const season = req.params.season ?? null
+        if (typeof req.query.short !== 'undefined') {
+          const res = await GetAdminTeams(season)
+          return {status: 'ok', data: res}
+        } else {
+          const res = await GetTeams(season)
+          return {status: 'ok', data: res}
+        }
+      } catch (e) {
+        reply.code(500).send() 
+      }
+    }
+  })
+
+  fastify.get('/team/:teamId', {
+    schema: {
+      description: 'Get team info by id',
+      tags: ['Teams'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const res = await GetTeamInfo(req.params.teamId)
+        return res
+      } catch (e) {
+        reply.code(500).send()
+      }
+    }
+  })
+
+
+	fastify.get('/scores/live', {
+		schema: {
+			description: 'Live scores of the last 24 hours',
+			summary: 'Recent live scores',
+			tags: ['scores'],
+			response: {
+				200: {
+					description: 'Successful response',
+					type: 'object',
+				},
+			},
+		},
+		handler: async (req, reply) => {
+			try {
+				const q0 = `
+					SELECT m.id, m.home_team_id, m.away_team_id, h.name home_name, a.name away_name
+					FROM matches m, teams h, teams a
+					WHERE date >= ?
+					AND date < ?
+					AND m.home_team_id=h.id
+					AND m.away_team_id=a.id
+				`
+				const startDate = DateTime.now().toFormat('yyyy-MM-dd')
+				const endDate = DateTime.now().plus({days: 2}).toFormat('yyyy-MM-dd')
+				const r0 = await DoQuery(q0, [startDate, endDate])
+				const matches = {}
+				const promises = []
+				r0.forEach(match => {
+					matches[match.id] = match
+					matches[match.id].homeScore = 0
+					matches[match.id].awayScore = 0
+					const key = `match_${match.id}`
+					promises.push(CacheGet(key))
+				})
+				const res = await Promise.all(promises)
+				res.forEach(_liveMatch => {
+					if (_liveMatch) {
+						const liveMatch = JSON.parse(_liveMatch)
+						if (typeof liveMatch.frames !== 'undefined' && Array.isArray(liveMatch.frames)) {
+							let homeScore = 0
+							let awayScore = 0
+							liveMatch.frames.forEach(frame => {
+								if (typeof frame.winner && frame.winner > 0) {
+									if (frame.winner === matches[liveMatch.matchId].home_team_id) {
+										homeScore++
+									} else {
+										awayScore++
+									}
+								}
+							})
+							matches[liveMatch.matchId].homeScore = homeScore
+							matches[liveMatch.matchId].awayScore = awayScore
+						}
+					}
+				})
+				const scores = Object.keys(matches).map(matchId => matches[matchId])
+				reply.code(200).send({status: 'ok', data: scores})
+			} catch (e) {
+				console.log(e)
+				reply.code(500).send()
+			}
+		}
+	})
+	done()
 })
 
 fastify.get('/matches/postponed', async (req, reply) => {
@@ -1769,131 +1839,6 @@ fastify.get('/match/details/:matchId', async (req, reply) => {
   }
 })()
 
-fastify.ready().then(() => {
-  fastify.io.on('connection', socket => {
-    fastify.log.info('connection')
-
-    socket.on('disconnect', reason => {
-      fastify.log.info('DISconnection')
-    })
-    socket.on('join', (room, cb) => {
-      const res = socket.join(room)
-      cb({
-        status: 'ok'
-      })
-      fastify.log.info('join: ' + room)
-    })
-
-    socket.on('matchupdate', async data => {
-      try {
-        fastify.log.info('WS incoming: ' + JSON.stringify(data))
-        if (ValidateIncoming(data)) {
-          if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
-            if (typeof data.matchId !== 'undefined' && data.matchId) {
-              await lock.acquire('matchinfo' + data.matchId, async () => {
-                const room = 'match_' + data.matchId
-                let recordHistory = true
-
-                if (data.type === 'win') {
-                  fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
-                  data.data.type = data.type
-                  const res = await UpdateFrame(data.data, room) // use room as a key to lock
-                  await Unfinalize(data.matchId)
-                  fastify.io.to(room).emit("frame_update", {type: 'win', frameIdx: data.data.frameIdx, winnerTeamId: data.data.winnerTeamId})
-                }
-
-                if (data.type === 'players') {
-                  fastify.log.info(room + ' - frame_update_players: ' + JSON.stringify(data))
-                  data.data.type = data.type
-                  await Unfinalize(data.matchId)
-                  const res = await UpdateFrame(data.data, room)
-                  fastify.io.to(room).emit("frame_update", {type: 'players', frameIdx: data.data.frameIdx, playerIdx: data.data.playerIdx, side: data.data.side, playerId: data.data.playerId, newPlayer: data.data.newPlayer})
-                }
-
-                if (data.type === 'firstbreak') {
-                  fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
-                  const lockKey = 'matchinfo_' + data.matchId
-                  await Unfinalize(data.matchId)
-                  const res = await UpdateMatch(data.data, lockKey)
-                  fastify.io.to(room).emit('match_update', data)
-                }
-
-                if (data.type === 'finalize') {
-                  fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
-                  const lockKey = 'matchinfo_' + data.matchId
-                  const finalizedData = {}
-                  data.data.timestamp = data.timestamp
-                  finalizedData['finalize_' + data.data.side] = data.data
-                  const res = await UpdateMatch(finalizedData, lockKey)
-                  const matchInfo = await GetMatchInfo(data.matchId)
-                  const {finalize_home, finalize_away} = matchInfo
-                  fastify.io.to(room).emit('match_update', data)
-                  if (ValidateFinalize(finalize_home, finalize_away)) {
-                    FinalizeMatch(data.matchId)
-                  }
-                }
-
-                if (data.type === 'unfinalize') {
-                  fastify.log.info(room + ' - UNfinalize: ' + JSON.stringify(data))
-                  UnfinalizeSide(data.matchId, data.data.side)
-                  fastify.io.to(room).emit('match_update', data)
-                }
-
-                if (data.type === 'newnote') {
-                  fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
-                  const lockKey = 'matchinfo_' + data.matchId
-                  const res = await AddMatchNote(data, lockKey)
-                  if (typeof data.data !== 'undefined' && typeof data.data.note !== 'undefined') {
-                    data.note = data.data.note
-                  } else {
-                    data.note = ''
-                  }
-                  const formattedNote = await FormatNote(data)
-                  formattedNote.type = 'newnote'
-                  fastify.io.to(room).emit("match_update2", formattedNote)
-                  fastify.io.to(room).emit("match_update", formattedNote)
-                  recordHistory = false
-                }
-
-                if (recordHistory) {
-                  const history = await SaveMatchUpdateHistory(data)
-                  const formattedHistory = await FormatHistory(history)
-                  fastify.io.to(room).emit('historyupdate', formattedHistory)
-                  fastify.io.to(room).emit('historyupdate2', formattedHistory)
-                }
-              })
-            }
-          }
-        }
-      } catch (e) {
-        console.log(e)
-      }
-    })
-
-    socket.on('getmatchinfo', (data, cb)  => {
-      fastify.log.info('socket ' + socket.id + ' - getmatchinfo: ' + JSON.stringify(data))
-      ;(async () => {
-        try {
-          const res = await GetMatchInfo(data.matchId)
-          cb(res)
-        } catch (e) {
-          cb({})
-        }
-      })()
-    })
-
-    socket.on('getframes', (data, cb) => {
-      ;(async () => {
-        try {
-          const res = await GetFrames(data.matchId)
-          cb(res)
-        } catch (e) {
-          cb([])
-        }
-      })()
-    })
-  })
-})
 
 fastify.get('/admin/refinalize/:matchId', async (req, reply) => {
   try {
@@ -5559,3 +5504,130 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
     return []
   }
 }
+
+fastify.ready().then(() => {
+	fastify.swagger()
+  fastify.io.on('connection', socket => {
+    fastify.log.info('connection')
+
+    socket.on('disconnect', reason => {
+      fastify.log.info('DISconnection')
+    })
+    socket.on('join', (room, cb) => {
+      const res = socket.join(room)
+      cb({
+        status: 'ok'
+      })
+      fastify.log.info('join: ' + room)
+    })
+
+    socket.on('matchupdate', async data => {
+      try {
+        fastify.log.info('WS incoming: ' + JSON.stringify(data))
+        if (ValidateIncoming(data)) {
+          if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
+            if (typeof data.matchId !== 'undefined' && data.matchId) {
+              await lock.acquire('matchinfo' + data.matchId, async () => {
+                const room = 'match_' + data.matchId
+                let recordHistory = true
+
+                if (data.type === 'win') {
+                  fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
+                  data.data.type = data.type
+                  const res = await UpdateFrame(data.data, room) // use room as a key to lock
+                  await Unfinalize(data.matchId)
+                  fastify.io.to(room).emit("frame_update", {type: 'win', frameIdx: data.data.frameIdx, winnerTeamId: data.data.winnerTeamId})
+                }
+
+                if (data.type === 'players') {
+                  fastify.log.info(room + ' - frame_update_players: ' + JSON.stringify(data))
+                  data.data.type = data.type
+                  await Unfinalize(data.matchId)
+                  const res = await UpdateFrame(data.data, room)
+                  fastify.io.to(room).emit("frame_update", {type: 'players', frameIdx: data.data.frameIdx, playerIdx: data.data.playerIdx, side: data.data.side, playerId: data.data.playerId, newPlayer: data.data.newPlayer})
+                }
+
+                if (data.type === 'firstbreak') {
+                  fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
+                  const lockKey = 'matchinfo_' + data.matchId
+                  await Unfinalize(data.matchId)
+                  const res = await UpdateMatch(data.data, lockKey)
+                  fastify.io.to(room).emit('match_update', data)
+                }
+
+                if (data.type === 'finalize') {
+                  fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
+                  const lockKey = 'matchinfo_' + data.matchId
+                  const finalizedData = {}
+                  data.data.timestamp = data.timestamp
+                  finalizedData['finalize_' + data.data.side] = data.data
+                  const res = await UpdateMatch(finalizedData, lockKey)
+                  const matchInfo = await GetMatchInfo(data.matchId)
+                  const {finalize_home, finalize_away} = matchInfo
+                  fastify.io.to(room).emit('match_update', data)
+                  if (ValidateFinalize(finalize_home, finalize_away)) {
+                    FinalizeMatch(data.matchId)
+                  }
+                }
+
+                if (data.type === 'unfinalize') {
+                  fastify.log.info(room + ' - UNfinalize: ' + JSON.stringify(data))
+                  UnfinalizeSide(data.matchId, data.data.side)
+                  fastify.io.to(room).emit('match_update', data)
+                }
+
+                if (data.type === 'newnote') {
+                  fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
+                  const lockKey = 'matchinfo_' + data.matchId
+                  const res = await AddMatchNote(data, lockKey)
+                  if (typeof data.data !== 'undefined' && typeof data.data.note !== 'undefined') {
+                    data.note = data.data.note
+                  } else {
+                    data.note = ''
+                  }
+                  const formattedNote = await FormatNote(data)
+                  formattedNote.type = 'newnote'
+                  fastify.io.to(room).emit("match_update2", formattedNote)
+                  fastify.io.to(room).emit("match_update", formattedNote)
+                  recordHistory = false
+                }
+
+                if (recordHistory) {
+                  const history = await SaveMatchUpdateHistory(data)
+                  const formattedHistory = await FormatHistory(history)
+                  fastify.io.to(room).emit('historyupdate', formattedHistory)
+                  fastify.io.to(room).emit('historyupdate2', formattedHistory)
+                }
+              })
+            }
+          }
+        }
+      } catch (e) {
+        console.log(e)
+      }
+    })
+
+    socket.on('getmatchinfo', (data, cb)  => {
+      fastify.log.info('socket ' + socket.id + ' - getmatchinfo: ' + JSON.stringify(data))
+      ;(async () => {
+        try {
+          const res = await GetMatchInfo(data.matchId)
+          cb(res)
+        } catch (e) {
+          cb({})
+        }
+      })()
+    })
+
+    socket.on('getframes', (data, cb) => {
+      ;(async () => {
+        try {
+          const res = await GetFrames(data.matchId)
+          cb(res)
+        } catch (e) {
+          cb([])
+        }
+      })()
+    })
+  })
+})

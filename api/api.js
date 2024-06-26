@@ -37,38 +37,60 @@ const mongoUri = 'mongodb://' + process.env.MONGO_URI
 const mongoClient = new MongoClient(mongoUri)
 */
 
-;(async () => {
-await fastify.register(require('@fastify/swagger'), {
-  openapi: {
-    openapi: '3.0.0',
-    info: {
-      title: 'BKK League swagger',
-      description: 'BKK League API',
-      version: '0.1.0'
-    },
+function compare(a, b) {
+  a = Buffer.from(a)
+  b = Buffer.from(b)
+  if (a.length !== b.length) {
+    crypto.timingSafeEqual(a, a)
+    return false
   }
-})
-})()
-fastify.register(require('@fastify/swagger-ui'), {
-  routePrefix: '/docs',
-  uiConfig: {
-    docExpansion: 'full', // expand/not all the documentations none|list|full
-    deepLinking: false,
-  },
-  uiHooks: {
-    onRequest: function(request, reply, next) {
-      next()
-    },
-    preHandler: function(request, reply, next) {
-      next()
-    }
-  },
-  staticCSP: false,
-  transformStaticCSP: (header) => header,
-  transformSpecification: (swaggerObject, request, reply) => { return swaggerObject },
-  transformSpecificationClone: true,
-})
+  return crypto.timingSafeEqual(a, b)
+}
 
+;(async () => {
+  await fastify.register(require('@fastify/swagger'), {
+    openapi: {
+      openapi: '3.0.0',
+      info: {
+        title: 'BKK League swagger',
+        description: 'BKK League API',
+        version: '0.1.0'
+      },
+    }
+  })
+
+  await fastify.register(require('@fastify/basic-auth'), {
+    validate(username, password, req, reply, done) {
+      console.log(process.env.SWAGGER_USERNAME, username, password)
+      const validUsername = process.env.SWAGGER_USERNAME
+      const validPassword = process.env.SWAGGER_PASSWORD
+      let result = true
+      result = compare(username, validUsername) && result
+      result = compare(password, validPassword) && result
+      if (result) {
+        done()
+      } else {
+        done(new Error('Access denied'))
+      }
+    },
+    authenticate: true
+  })
+
+  await fastify.register(require('@fastify/swagger-ui'), {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'none', // expand/not all the documentations none|list|full
+      deepLinking: false,
+    },
+    uiHooks: {
+      onRequest: fastify.basicAuth,
+    },
+    staticCSP: false,
+    transformStaticCSP: (header) => header,
+    transformSpecification: (swaggerObject, request, reply) => { return swaggerObject },
+    transformSpecificationClone: true,
+  })
+})()
 
 const lock = new AsyncLock()
 
@@ -958,6 +980,17 @@ fastify.get('/game/types', async (req, reply) => {
 
 fastify.register((fastify, options, done) => {
 
+  fastify.get('/websockets', {
+    schema: {
+      summary: 'Websocket description',
+      description: '<div>Websocket server/client is using socket.io.</div><div>"socket.io-client": "^4.7.2"</div><div>Join a live match/channel/room by socket.emit("join", "match_XXXX") // see socket.io client docs <a target="_blank" href="https://socket.io/docs/v4/client-api/#socketemiteventname-args">https://socket.io/docs/v4/client-api/#socketemiteventname-args</a></div><div>Your WS client should listen for "match_update" and "frame_update".</div><div><h3>frame_update</h3><ul><li>win: {type: "win", frameIdx: &lt;number&gt;, winnerTeamId: &lt;number&gt;}</li><li>players: {type: "players", frameIdx: &lt;number&gt;, playerIdx: 0|1, side: team_id(number), playerId: &lt;number&gt;, newPlayer: true|false}</li></ul><h3>match_update</h3><ul><li>firstbreak: {firstbreak: team_id (number)}</li></ul></div>',
+      tags: ['websocket'],
+    },
+    handler: async (req, reply) => {
+      reply.code(200).send()
+    },
+  })
+
   fastify.get('/v2/season', {
     schema: {
       description: 'Get current active season',
@@ -975,7 +1008,8 @@ fastify.register((fastify, options, done) => {
 
   fastify.get('/matches', {
     schema: {
-      description: 'Get active season matches',
+      summary: 'Get matches for this season',
+      description: 'Get active season matches.  This is used for the main screen "Upcoming matches"',
       querystring: {
         newonly: {type: 'string', description: 'Set to "true" for matches with dates today or later'},
       },
@@ -1038,6 +1072,7 @@ fastify.register((fastify, options, done) => {
 
   fastify.get('/match/:matchId', {
     schema: {
+      summary: 'Get match information (no frame scores).  First break is stored here.',
       description: 'Get match INFO by id',
       tags: ['Matches'],
     },
@@ -1054,7 +1089,7 @@ fastify.register((fastify, options, done) => {
 
   fastify.get('/frames/:matchId', {
     schema: {
-      summary: 'Get frames info',
+      summary: 'Get frames info, live scored for unfinalized matches.',
       description: 'Can get live scores for unfinalized matches here',
       tags: ['Matches'],
     },
@@ -1073,6 +1108,7 @@ fastify.register((fastify, options, done) => {
 
   fastify.get('/matches/season/:seasonId', {
     schema: {
+      summary: 'All matches for the season with full information (large).',
       description: 'Get matches (FULL info) for season',
       tags: ['Matches'],
     },
@@ -1103,6 +1139,7 @@ fastify.register((fastify, options, done) => {
 
 	fastify.get('/teams/:season', {
 		schema: {
+      summary: 'Get all teams and associated players',
       description: 'Get all teams and players in the team',
       querystring: {
         short: {type: 'number', description: 'Set to 1 for teams only (no player data).'},
@@ -1127,7 +1164,8 @@ fastify.register((fastify, options, done) => {
 
   fastify.get('/team/:teamId', {
     schema: {
-      description: 'Get team info by id',
+      summary: 'Get team information by id',
+      description: 'Get team info by id: (division name, venues name, logo)',
       tags: ['Teams'],
     },
     handler: async (req, reply) => {
@@ -2429,20 +2467,25 @@ async function ValidateIncoming(data) {
     if (typeof data.jwt !== 'undefined' && data.jwt) {
       const jwt = fastify.jwt.decode(data.jwt)
       const token = jwt.token
+      fastify.log.info('ValidateIncoming - token: ' + token)
       if (typeof token !== 'undefined' && token) {
         const user = await GetPlayerFromToken(token)
         const matchPlayers= await GetMatchPlayers(data.matchId)
         const player = matchPlayers.find(player => player.player_id === user.playerId)
         return true
       } else {
+        fastify.log.info('ValidateIncoming - NO Token')
         return true
         // return false -- awaiting client update
       }
     } else {
+      fastify.log.info('ValidateIncoming - NO JWT')
       return true
+      // return false
     }
   } catch (e) {
     console.log(e)
+    fastify.log.error('ValidateIncoming -', e.message) 
     return true
     // return false
   }
@@ -5583,7 +5626,6 @@ fastify.ready().then(() => {
       try {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
         if (await ValidateIncoming(data)) {
-          console.log('valddate')
           if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {

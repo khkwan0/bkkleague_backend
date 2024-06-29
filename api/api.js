@@ -1184,12 +1184,6 @@ fastify.register((fastify, options, done) => {
 			description: 'Live scores of the last 24 hours',
 			summary: 'Recent live scores',
 			tags: ['scores'],
-			response: {
-				200: {
-					description: 'Successful response',
-					type: 'object',
-				},
-			},
 		},
 		handler: async (req, reply) => {
 			try {
@@ -1235,6 +1229,7 @@ fastify.register((fastify, options, done) => {
 					}
 				})
 				const scores = Object.keys(matches).map(matchId => matches[matchId])
+        console.log(scores)
 				reply.code(200).send({status: 'ok', data: scores})
 			} catch (e) {
 				console.log(e)

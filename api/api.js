@@ -3995,6 +3995,9 @@ async function SaveMatchUpdateHistory(data) {
       if (typeof matchInfo.history === 'undefined') {
         matchInfo.history = []
       }
+      if (typeof data.data.jwt !== 'undefined') {
+        delete(data.data.jwt)
+      }
       toSave = {
         playerId: data.playerId,
         timestamp: Date.now(),
@@ -5621,6 +5624,7 @@ fastify.ready().then(() => {
       try {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
         if (await ValidateIncoming(data)) {
+          if (typeof data
           if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {

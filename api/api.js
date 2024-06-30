@@ -1,6 +1,7 @@
 const fastify = require('fastify')({logger: true, trustProxy: true})
 const fastifyIO = require('fastify-socket.io')
 const fastifyJWT = require('@fastify/jwt')
+const cors = require('@fastify/cors')
 const mysql = require('mysql2')
 const mysqlp = require('mysql2/promise')
 const phpUnserialize = require('phpunserialize')
@@ -22,6 +23,7 @@ const admin = require('firebase-admin')
 const {copyFile} = require('node:fs/promises')
 
 require('dotenv').config()
+fastify.register(cors)
 fastify.register(fastifyJWT, {secret: process.env.JWT_SECRET})
 fastify.register(fastifyFormBody)
 fastify.register(fastifyMultipart, {
@@ -5548,12 +5550,13 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
       */
 
       // get all upcoming matches for the league
+      fastify.log.info("NO team, show upcoming")
       query = `
         SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
             FROM matches m, divisions d, venues v, teams
             WHERE m.date>=?
               AND m.home_team_id=teams.id
@@ -5578,7 +5581,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
             FROM matches m, divisions d, venues v, teams
             WHERE m.home_team_id=teams.id
               AND teams.venue_id=v.id
@@ -5624,7 +5627,9 @@ fastify.ready().then(() => {
       try {
         fastify.log.info('WS incoming: ' + JSON.stringify(data))
         if (await ValidateIncoming(data)) {
-          if (typeof data
+          if (typeof data.jwt !== 'undefined') {
+            delete data.jwt
+          }
           if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {

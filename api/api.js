@@ -1014,6 +1014,7 @@ fastify.register((fastify, options, done) => {
       description: 'Get active season matches.  This is used for the main screen "Upcoming matches"',
       querystring: {
         newonly: {type: 'string', description: 'Set to "true" for matches with dates today or later'},
+        completed: {type: 'string', description: 'Set to "true" for completed matches'},
       },
       tags: ['Matches'],
     },

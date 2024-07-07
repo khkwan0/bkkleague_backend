@@ -1316,7 +1316,6 @@ fastify.register((fastify, options, done) => {
           }
         })
         const scores = Object.keys(matches).map(matchId => matches[matchId])
-        console.log(scores)
         reply.code(200).send({status: 'ok', data: scores})
       } catch (e) {
         console.log(e)
@@ -1522,7 +1521,6 @@ fastify.register((fastify, options, done) => {
               AND m.status_id=3
           `
           const r0 = await DoQuery(q0, [seasonId, teamId, teamId])
-          console.log(r0)
           let i = 0
           let wins = 0
           let ties = 0
@@ -1557,6 +1555,113 @@ fastify.register((fastify, options, done) => {
             frames: frames,
           }
           reply.code(200).send({status: 'ok', data: returnData})
+        } else {
+          reply.code(404).send()
+        }
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
+  fastify.get('/v2/frames/:matchId', {
+    schema: {
+      summary: 'Live scores by MatchId',
+      description: 'New live scores for unfinalized matches',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const matchId = req.params.matchId ?? null
+        if (matchId) {
+          // this is what we will return
+          const allFrameData = {
+            firstBreak: '',
+            teams: {
+              home: {},
+              away: {},
+            },
+            frameData: [],
+          }
+
+          // let's fill in the teams
+          const matchInfo = await GetMatchFromDB(matchId)
+          if (typeof matchInfo !== 'undefined') {
+            const teams = {}
+            teams[matchInfo.home_team_id] = {
+              side: 'home',
+              data: await GetTeamFromDB(matchInfo.home_team_id),
+            }
+            teams[matchInfo.away_team_id] = {
+              side: 'away',
+              data: await GetTeamFromDB(matchInfo.away_team_id),
+            }
+            allFrameData.teams.home = teams[matchInfo.home_team_id].data
+            allFrameData.teams.away = teams[matchInfo.away_team_id].data
+
+            // let's determine first break
+            const matchMetaRaw = await CacheGet('matchinfo_' + matchId)
+            const matchMeta = JSON.parse(matchMetaRaw)
+            if (typeof matchMeta?.firstBreak !== 'undefined') {
+              allFrameData.firstBreak = teams[matchMeta.firstBreak].side
+            }
+
+            const match = await GetFrames(matchId)
+            if (typeof match.frames !== 'undefined') {
+              const frames = match.frames
+              const homePlayersArray = await GetPlayersByTeamIdFlat(
+                matchInfo.home_team_id,
+              )
+              const awayPlayersArray = await GetPlayersByTeamIdFlat(
+                matchInfo.away_team_id,
+              )
+              const homePlayers = {}
+              const awayPlayers = {}
+              homePlayersArray.forEach(player => {
+                homePlayers[player.playerId] = player
+              })
+              awayPlayersArray.forEach(player => {
+                awayPlayers[player.playerId] = player
+              })
+              if (typeof frames !== 'undefined' && Array.isArray(frames)) {
+                let i = 0
+                while (i < frames.length) {
+                  if (
+                    typeof frames[i].winner !== 'undefined' &&
+                    frames[i].winner
+                  ) {
+                    const winner = frames[i].winner
+                    const data = {
+                      frameNumber: frames[i].frameNumber,
+                      winner: {
+                        side: teams[winner].side,
+                        teamId: winner,
+                        name: teams[winner].data.name,
+                        shortName: teams[winner].data.short_name,
+                      },
+                      players: {
+                        home: [],
+                        away: [],
+                      },
+                    }
+                    frames[i].homePlayerIds.forEach(playerId => {
+                      data.players.home.push(homePlayers[playerId])
+                    })
+                    frames[i].awayPlayerIds.forEach(playerId => {
+                      data.players.away.push(awayPlayers[playerId])
+                    })
+
+                    allFrameData.frameData.push(data)
+                  }
+                  i++
+                }
+              }
+            }
+            reply.code(200).send({status: 'ok', data: allFrameData})
+          } else {
+            reply.code(404).send()
+          }
         } else {
           reply.code(404).send()
         }
@@ -3137,12 +3242,27 @@ async function GetMatchPlayers(matchId) {
     const q0 = `
       SELECT pt.player_id, p.*
       FROM matches m, players_teams as pt, players p
-      WHERE m.id=4402
+      WHERE m.id=?
       AND (pt.team_id=m.home_team_id OR pt.team_id=m.away_team_id)
       AND pt.player_id=p.id
     `
     const r0 = await DoQuery(q0, [matchId])
     return r0
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetMatchFromDB(matchId = 0) {
+  try {
+    const q0 = `
+      SELECT *
+      FROM matches
+      WHERE id=?
+    `
+    const r0 = await DoQuery(q0, [matchId])
+    return r0[0]
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -3617,6 +3737,22 @@ async function AddNewTeam(name, venueId) {
     `
     const r1 = await DoQuery(q1, [0, insertId, seasonId])
     return r1
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetTeamFromDB(teamId) {
+  try {
+    const q0 = `
+      SELECT t.*, v.logo as logo
+      FROM teams t, venues v
+      WHERE t.id=?
+      AND t.venue_id=v.id
+    `
+    const r0 = await DoQuery(q0, [teamId])
+    return r0[0]
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -4677,7 +4813,6 @@ async function FinalizeMatch(matchId) {
     const framesCacheKey = 'match_' + matchId
     const rawCachedFrames = await CacheGet(framesCacheKey)
     const matchInfoCacheKey = 'matchinfo_' + matchId
-    const rawMatchInfo = await CacheGet(matchInfoCacheKey)
     if (rawCachedFrames && rawMatchInfo) {
       const cachedFrames = JSON.parse(rawCachedFrames)
       const frames = cachedFrames.frames
@@ -6072,8 +6207,10 @@ async function GetUncompletedMatches(
         ORDER BY y.date
       `
       params.push(today)
+      /*
       const res = await DoQuery(query, params)
       return res
+      */
     } else {
       // get all matches that are not completed
       query = `
@@ -6100,6 +6237,50 @@ async function GetUncompletedMatches(
       params.push(currentSeason)
     }
     const res = await DoQuery(query, params)
+    let i = 0
+    while (i < res.length) {
+      if (typeof res?.[i]?.home_team_id !== 'undefined') {
+        const logo = await CacheGet('logo_' + res[i].home_team_id)
+        if (!logo) {
+          const q0 = `
+            SELECT logo
+            FROM teams, venues
+            WHERE teams.id=?
+            AND teams.venue_id=venues.id
+          `
+          const r0 = await DoQuery(q0, [res[i].home_team_id])
+          if (typeof r0?.[0]?.logo !== 'undefined') {
+            res[i].home_logo = r0[0].logo
+            await CacheSet('logo_' + res[i].home_team_id, r0[0].logo ?? '')
+          } else {
+            res[i].home_logo = ''
+          }
+        } else {
+          res[i].home_logo = logo
+        }
+      }
+      if (typeof res?.[i]?.away_team_id !== 'undefined') {
+        const logo = await CacheGet('logo_' + res[i].away_team_id)
+        if (!logo) {
+          const q0 = `
+            SELECT logo
+            FROM teams, venues
+            WHERE teams.id=?
+            AND teams.venue_id=venues.id
+          `
+          const r0 = await DoQuery(q0, [res[i].away_team_id])
+          if (typeof r0?.[0]?.logo !== 'undefined') {
+            res[i].away_logo = r0[0].logo
+            await CacheSet('logo_' + res[i].away_team_id, r0[0].logo ?? '')
+          } else {
+            res[i].away_logo = ''
+          }
+        } else {
+          res[i].away_logo = logo
+        }
+      }
+      i++
+    }
     return res
   } catch (e) {
     console.log(e)

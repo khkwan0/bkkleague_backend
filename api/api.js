@@ -1437,6 +1437,136 @@ fastify.register((fastify, options, done) => {
     },
   })
 
+  fastify.get('/stats/team/players/internal/:teamId', {
+    schema: {
+      summary: 'Team stats (current season). Test with 735.',
+      description: 'Team (internal) statistics',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const teamId = req.params.teamId ?? null
+        if (!teamId) {
+          reply.code(404).send()
+        } else {
+          const stats = await GetTeamPlayersStatsInternal(teamId)
+          reply.code(200).send({status: 'ok', data: stats})
+        }
+      } catch (e) {
+        console.log(e)
+        reply
+          .code(500)
+          .send({status: 'error', msg: 'Server error', error: 'server_error'})
+      }
+    },
+  })
+
+  fastify.get('/stats/teams/:seasonId', {
+    schema: {
+      summary: 'Team stats across the league',
+      description: 'Team statistics',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const seasonId =
+          req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+        const stats8B = await GetTeamStats(seasonId, '8b')
+        const stats9B = await GetTeamStats(seasonId, '9b')
+        const stats = {
+          eightBall: stats8B,
+          nineBall: stats9B,
+        }
+        return stats
+      } catch (e) {
+        return []
+      }
+    },
+  })
+
+  fastify.get('/league/standings/:seasonId', {
+    schema: {
+      summary: 'Team standings across the league',
+      description: 'Team statistics',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const seasonId =
+          req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+        const standings = await GetStandings(seasonId)
+        return standings
+      } catch (e) {
+        return []
+      }
+    },
+  })
+
+  fastify.get('/season/:seasonId/stats/record/team/:teamId', {
+    schema: {
+      summary: 'Team record',
+      description: 'Win/Loss record',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const teamId = req.params.teamId ?? null
+        const seasonId = req.params.seasonId ?? null
+        if (teamId && seasonId) {
+          const q0 = `
+            SELECT m.home_team_id, m.away_team_id, m.home_frames, m.away_frames, home_points, away_points
+            FROM matches m, divisions d
+            WHERE m.division_id=d.id
+              AND d.season_id=?
+              AND (m.home_team_id=? OR m.away_team_id=?)
+              AND m.status_id=3
+          `
+          const r0 = await DoQuery(q0, [seasonId, teamId, teamId])
+          console.log(r0)
+          let i = 0
+          let wins = 0
+          let ties = 0
+          let points = 0
+          let frames = 0
+          while (i < r0.length) {
+            if (r0[i].home_team_id == teamId) {
+              frames += r0[i].home_frames
+              points += r0[i].home_points
+              if (r0[i].home_frames > r0[i].away_frames) {
+                wins++
+              } else if (r0[i].home_frames === r0[i].away_frames) {
+                ties++
+              }
+            } else {
+              frames += r0[i].away_frames
+              points += r0[i].away_points
+              if (r0[i].away_frames > r0[i].home_frames) {
+                wins++
+              } else if (r0[i].home_frames === r0[i].away_frames) {
+                ties++
+              }
+            }
+            i++
+          }
+          const returnData = {
+            played: i,
+            wins: wins,
+            ties: ties,
+            losses: i - wins - ties,
+            points: points,
+            frames: frames,
+          }
+          reply.code(200).send({status: 'ok', data: returnData})
+        } else {
+          reply.code(404).send()
+        }
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
   done()
 })
 
@@ -1895,24 +2025,6 @@ fastify.get('/stats/doubles', async (req, reply) => {
   }
 })
 
-fastify.get('/stats/team/players/internal/:teamId', async (req, reply) => {
-  try {
-    const teamId = req.params.teamId ?? null
-    if (!teamId) {
-      reply.code(404).send()
-    } else {
-      const stats = await GetTeamPlayersStatsInternal(teamId)
-      console.log(stats)
-      reply.code(200).send({status: 'ok', data: stats})
-    }
-  } catch (e) {
-    console.log(e)
-    reply
-      .code(500)
-      .send({status: 'error', msg: 'Server error', error: 'server_error'})
-  }
-})
-
 fastify.get('/match/stats/:matchId', async (req, reply) => {
   try {
     const matchId = req.params.matchId ?? null
@@ -1938,33 +2050,6 @@ fastify.get('/stats/match', async (req, reply) => {
     }
     const stats = await GetMatchPerformance(playerId)
     return stats
-  } catch (e) {
-    return []
-  }
-})
-
-fastify.get('/stats/teams/:seasonId', async (req, reply) => {
-  try {
-    const seasonId =
-      req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
-    const stats8B = await GetTeamStats(seasonId, '8b')
-    const stats9B = await GetTeamStats(seasonId, '9b')
-    const stats = {
-      eightBall: stats8B,
-      nineBall: stats9B,
-    }
-    return stats
-  } catch (e) {
-    return []
-  }
-})
-
-fastify.get('/league/standings/:seasonId', async (req, reply) => {
-  try {
-    const seasonId =
-      req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
-    const standings = await GetStandings(seasonId)
-    return standings
   } catch (e) {
     return []
   }

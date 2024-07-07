@@ -32,7 +32,7 @@ fastify.register(fastifyMultipart, {
   fileSize: 5000000,
   files: 1,
   parts: 1000,
-//  attachFieldsToBody: true,
+  //  attachFieldsToBody: true,
 })
 /*
 const mongoUri = 'mongodb://' + process.env.MONGO_URI
@@ -49,16 +49,16 @@ function compare(a, b) {
   return crypto.timingSafeEqual(a, b)
 }
 
-;(async () => {
+(async () => {
   await fastify.register(require('@fastify/swagger'), {
     openapi: {
       openapi: '3.0.0',
       info: {
         title: 'BKK League swagger',
         description: 'BKK League API',
-        version: '0.1.0'
+        version: '0.1.0',
       },
-    }
+    },
   })
 
   await fastify.register(require('@fastify/basic-auth'), {
@@ -75,7 +75,7 @@ function compare(a, b) {
         done(new Error('Access denied'))
       }
     },
-    authenticate: true
+    authenticate: true,
   })
 
   await fastify.register(require('@fastify/swagger-ui'), {
@@ -88,8 +88,10 @@ function compare(a, b) {
       onRequest: fastify.basicAuth,
     },
     staticCSP: false,
-    transformStaticCSP: (header) => header,
-    transformSpecification: (swaggerObject, request, reply) => { return swaggerObject },
+    transformStaticCSP: header => header,
+    transformSpecification: (swaggerObject, request, reply) => {
+      return swaggerObject
+    },
     transformSpecificationClone: true,
   })
 })()
@@ -111,13 +113,12 @@ const mysqlHandlep = mysqlp.createPool({
   database: process.env.MYSQL_DB,
 })
 
-const redisClient = createClient({url: process.env.REDIS_HOST})
-;(async () => {
+const redisClient = createClient({url: process.env.REDIS_HOST});
+(async () => {
   await redisClient.connect()
-  fastify.log.info("Redis HOST: " +  process.env.REDIS_HOST)
-  fastify.log.info("Redis is: " + redisClient.isReady ? "Up": "Down")
+  fastify.log.info('Redis HOST: ' + process.env.REDIS_HOST)
+  fastify.log.info('Redis is: ' + redisClient.isReady ? 'Up' : 'Down')
 })()
-
 
 const transporter = nodemailer.createTransport({
   pool: true,
@@ -130,7 +131,7 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     rejectedUnauthorized: false,
-  }
+  },
 })
 
 const firebaseAccount = require('./bangkok-pool-league-b8100-firebase-adminsdk-c8zuk-b93d8193a2.json')
@@ -160,9 +161,9 @@ const DoQuery = (queryString, params) => {
       }
     })
   })
-}
+};
 
-;(async () => {
+(async () => {
   try {
     const q0 = `
       SELECT fcm_tokens
@@ -200,7 +201,7 @@ const DoQuery = (queryString, params) => {
                 title: 'APNS',
                 subtitle: 'Test',
                 body: 'YO Yo!',
-              }
+              },
             },
           },
           headers: {
@@ -214,7 +215,6 @@ const DoQuery = (queryString, params) => {
         if (res.failureCount > 0) {
           DeleteBadTokens(res, tokens, tokenOwners)
         }
-
       } catch (e) {
         console.log(e)
       }
@@ -223,7 +223,6 @@ const DoQuery = (queryString, params) => {
     console.log(e)
   }
 })()
-
 
 async function DoQuery2(queryString, params) {
   const conn = await mysqlHandle.getConnection()
@@ -278,7 +277,14 @@ async function DeleteBadTokens(res, tokens, tokenOwners) {
   }
 }
 
-async function SendNotification(tokens = [], tokenOwners = {}, title = '', body = '', badge = 0, channelId = 'App Wide') {
+async function SendNotification(
+  tokens = [],
+  tokenOwners = {},
+  title = '',
+  body = '',
+  badge = 0,
+  channelId = 'App Wide',
+) {
   if (tokens.length > 0) {
     try {
       const payload = {
@@ -306,7 +312,7 @@ async function SendNotification(tokens = [], tokenOwners = {}, title = '', body 
           headers: {
             'apns-priority': '5',
           },
-        }
+        },
       }
       if (title || body) {
         payload.android.notifiction.title = title
@@ -315,7 +321,12 @@ async function SendNotification(tokens = [], tokenOwners = {}, title = '', body 
         payload.apns.payload.aps.alert.body = body
       }
       const res = await admin.messaging().sendEachForMulticast(payload)
-      fastify.log.info('Notification send: Success - ' + res.successCount + ', Failure - ' + res.failureCount)
+      fastify.log.info(
+        'Notification send: Success - ' +
+          res.successCount +
+          ', Failure - ' +
+          res.failureCount,
+      )
       if (res.failureCount > 0) {
         DeleteBadTokens(res, tokens, tokenOwners)
       }
@@ -354,14 +365,14 @@ async function SendNotificationToAdmins(body = '', title = '', badge = 0) {
   }
 }
 
-async function CacheSet(key, value, ttl= 0) {
+async function CacheSet(key, value, ttl = 0) {
   try {
     if (ttl === 0) {
       await redisClient.set(key, value)
     } else {
       await redisClient.set(key, value, {EX: ttl})
     }
-  } catch(e) {
+  } catch (e) {
     console.log(e)
   }
 }
@@ -414,7 +425,6 @@ fastify.get('/', async (req, reply) => {
   reply.code(403).send()
 })
 
-
 // after auth, store user id into redis.
 // the key for the redis store is a random token
 // only send the token back in a jwt to the client
@@ -423,7 +433,7 @@ fastify.get('/', async (req, reply) => {
 fastify.post('/login', async (req, reply) => {
   if (typeof req.body.email && typeof req.body.password) {
     const {email, password} = req.body
-    fastify.log.info("Login attempt: " + email)
+    fastify.log.info('Login attempt: ' + email)
     const res = await HandleLogin(email.toLowerCase(), password)
     if (res) {
       const token = await CreateAndSaveSecretKey(res)
@@ -433,7 +443,7 @@ fastify.post('/login', async (req, reply) => {
         data: {
           token: jwt,
           user: res,
-        }
+        },
       }
     } else {
       reply.code(401).send({status: 'error', error: 'invalid_creds'})
@@ -448,7 +458,11 @@ fastify.post('/support', async (req, reply) => {
 })
 
 fastify.post('/delete', async (req, reply) => {
-  reply.code(200).send('Request received.  Sorry to see you go.  It may up to 48 hours to process.')
+  reply
+    .code(200)
+    .send(
+      'Request received.  Sorry to see you go.  It may up to 48 hours to process.',
+    )
 })
 
 fastify.get('/account/delete', async (req, reply) => {
@@ -544,19 +558,30 @@ fastify.post('/account/nick_name', async (req, reply) => {
 
 fastify.post('/login/social/line', async (req, reply) => {
   try {
-    if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
+    if (
+      typeof req.body.data !== 'undefined' &&
+      typeof req.body.data.accessToken !== 'undefined'
+    ) {
       fastify.log.info(req.body.data)
-      const res = await fetch('https://api.line.me/oauth2/v2.1/verify?access_token=' + req.body.data.accessToken.access_token)
+      const res = await fetch(
+        'https://api.line.me/oauth2/v2.1/verify?access_token=' +
+          req.body.data.accessToken.access_token,
+      )
       if (res.status === 200) {
         const json = await res.json()
         const profileRaw = await fetch('https://api.line.me/v2/profile', {
-          method: 'GET', 
+          method: 'GET',
           headers: {
             Authorization: 'Bearer ' + req.body.data.accessToken.access_token,
           },
         })
         const profile = await profileRaw.json()
-        const socialRes = await HandleSocialLogin('line', profile.userId, profile.displayName, profile.pictureUrl)
+        const socialRes = await HandleSocialLogin(
+          'line',
+          profile.userId,
+          profile.displayName,
+          profile.pictureUrl,
+        )
         const token = await CreateAndSaveSecretKey(socialRes)
         const jwt = fastify.jwt.sign({token: token})
         return {
@@ -564,7 +589,7 @@ fastify.post('/login/social/line', async (req, reply) => {
           data: {
             token: jwt,
             user: socialRes,
-          }
+          },
         }
       } else {
         reply.code(401).send()
@@ -580,16 +605,40 @@ fastify.post('/login/social/line', async (req, reply) => {
 
 fastify.post('/login/social/facebook', async (req, reply) => {
   try {
-    if (typeof req.body.data !== 'undefined' && typeof req.body.data.accessToken !== 'undefined') {
+    if (
+      typeof req.body.data !== 'undefined' &&
+      typeof req.body.data.accessToken !== 'undefined'
+    ) {
       fastify.log.info(req.body.data)
-      const appAccessTokenRes = await fetch('https://graph.facebook.com/oauth/access_token?client_id=' + process.env.FACEBOOK_CLIENT_ID + '&client_secret=' + process.env.FACEBOOK_CLIENT_SECRET + '&grant_type=client_credentials')
+      const appAccessTokenRes = await fetch(
+        'https://graph.facebook.com/oauth/access_token?client_id=' +
+          process.env.FACEBOOK_CLIENT_ID +
+          '&client_secret=' +
+          process.env.FACEBOOK_CLIENT_SECRET +
+          '&grant_type=client_credentials',
+      )
       const appAccessToken = await appAccessTokenRes.json()
-      const res = await fetch('https://graph.facebook.com/debug_token?input_token=' + req.body.data.accessToken + '&access_token=' + appAccessToken.access_token)
+      const res = await fetch(
+        'https://graph.facebook.com/debug_token?input_token=' +
+          req.body.data.accessToken +
+          '&access_token=' +
+          appAccessToken.access_token,
+      )
       if (res.status === 200) {
         const json = await res.json()
-        const profileRes = await fetch('https://graph.facebook.com/v17.0/' + json.data.user_id + '?fields=id,name,email,picture&access_token=' + req.body.data.accessToken)
+        const profileRes = await fetch(
+          'https://graph.facebook.com/v17.0/' +
+            json.data.user_id +
+            '?fields=id,name,email,picture&access_token=' +
+            req.body.data.accessToken,
+        )
         const profile = await profileRes.json()
-        const socialRes = await HandleSocialLogin('facebook', profile.id, profile.name, profile.picture.data.url)
+        const socialRes = await HandleSocialLogin(
+          'facebook',
+          profile.id,
+          profile.name,
+          profile.picture.data.url,
+        )
         const token = await CreateAndSaveSecretKey(socialRes)
         const jwt = fastify.jwt.sign({token: token})
         return {
@@ -597,7 +646,7 @@ fastify.post('/login/social/facebook', async (req, reply) => {
           data: {
             token: jwt,
             user: socialRes,
-          }
+          },
         }
       } else {
         reply.code(401).send()
@@ -611,7 +660,6 @@ fastify.post('/login/social/facebook', async (req, reply) => {
   }
 })
 
-
 fastify.post('/login/social/apple', async (req, reply) => {
   try {
     if (
@@ -622,19 +670,30 @@ fastify.post('/login/social/apple', async (req, reply) => {
     ) {
       let firstName = 'unknown'
       let lastName = 'unknown'
-      if (typeof req?.body?.data?.fullName?.givenName !== 'undefined' && req.body.data.fullName.givenName) {
+      if (
+        typeof req?.body?.data?.fullName?.givenName !== 'undefined' &&
+        req.body.data.fullName.givenName
+      ) {
         firstName = req.body.data.fullName.givenName
       }
-      if (typeof req?.body?.data?.fullName?.familyName !== 'undefined' && req.body.data.fullName.familyName) {
+      if (
+        typeof req?.body?.data?.fullName?.familyName !== 'undefined' &&
+        req.body.data.fullName.familyName
+      ) {
         lastName = req.body.data.fullName.familyName
       }
       const appleUserId = req.body.data?.user ?? null
       const jwtClaims = await verifyAppleToken.default({
         idToken: req.body.data.identityToken,
-        clientId: 'com.bangkok-pool-league'
+        clientId: 'com.bangkok-pool-league',
       })
       if (jwtClaims.sub === appleUserId) {
-        const socialRes = await HandleSocialLogin('apple', appleUserId, firstName + ' ' + lastName, null)
+        const socialRes = await HandleSocialLogin(
+          'apple',
+          appleUserId,
+          firstName + ' ' + lastName,
+          null,
+        )
         const token = await CreateAndSaveSecretKey(socialRes)
         const jwt = fastify.jwt.sign({token: token})
         return {
@@ -642,7 +701,7 @@ fastify.post('/login/social/apple', async (req, reply) => {
           data: {
             token: jwt,
             user: socialRes,
-          }
+          },
         }
       } else {
         reply.code(401).send({status: 'error', error: 'server_error'})
@@ -677,7 +736,7 @@ fastify.get('/logout', async (req, reply) => {
     await CacheDel(req.user.token)
     reply.code(200).send()
   } catch (e) {
-    fastify.log.error("Invalid JWT")
+    fastify.log.error('Invalid JWT')
     reply.code(400).send()
   }
 })
@@ -732,7 +791,10 @@ fastify.post('/avatar', async (req, reply) => {
       const data = await req.saveRequestFiles()
       const timestamp = new Date().toISOString()
       const newFilename = `${playerId}_appupload_${timestamp}.jpg`
-      await copyFile(data[0].filepath, '/usr/src/app/assets/profile_pictures/' + newFilename)
+      await copyFile(
+        data[0].filepath,
+        '/usr/src/app/assets/profile_pictures/' + newFilename,
+      )
       const q0 = `
         SELECT profile_picture
         FROM players
@@ -788,7 +850,13 @@ fastify.post('/login/register', async (req, reply) => {
         if (typeof res !== 'undefined') {
           reply.code(403).send({status: 'error', error: 'email_exists'})
         } else {
-          const newPlayerId = await AddNewUser(email, password1, nickname, firstName, lastName)
+          const newPlayerId = await AddNewUser(
+            email,
+            password1,
+            nickname,
+            firstName,
+            lastName,
+          )
           if (newPlayerId) {
             reply.code(200).send({status: 'ok'})
           } else {
@@ -868,11 +936,11 @@ fastify.get('/user', async (req, reply) => {
       const userData = await GetPlayer(userid)
       return userData
     } else {
-      fastify.log.error("No user id found from jwt")
+      fastify.log.error('No user id found from jwt')
       reply.code(404).send()
     }
   } catch (e) {
-    fastify.log.error("Invalid JWT")
+    fastify.log.error('Invalid JWT')
     reply.code(404).send()
   }
 })
@@ -892,7 +960,7 @@ fastify.get('/season', async (req, reply) => {
     const res = await GetActiveSeason()
     reply.code(200).send({season: res[0].identifier})
   } catch (e) {
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -902,7 +970,7 @@ fastify.get('/seasons', async (req, reply) => {
     reply.code(200).send({status: 'ok', data: res})
   } catch (e) {
     console.log(e)
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -925,7 +993,7 @@ fastify.get('/venues', async (req, reply) => {
     const res = await GetVenues()
     return res
   } catch (e) {
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -934,7 +1002,8 @@ fastify.post('/venue', async (req, reply) => {
     if (
       typeof req.body.venue.name !== 'undefined' &&
       typeof req.body.venue.location !== 'undefined' &&
-      req.body.venue.name && req.body.venue.location
+      req.body.venue.name &&
+      req.body.venue.location
     ) {
       const res = await SaveVenue(req.body.venue)
       reply.code(200).send(res)
@@ -943,7 +1012,7 @@ fastify.post('/venue', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'err', error: 'server_error'}) 
+    reply.code(500).send({status: 'err', error: 'server_error'})
   }
 })
 
@@ -952,7 +1021,7 @@ fastify.get('/teams', async (req, reply) => {
     const res = await GetTeams()
     return res
   } catch (e) {
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -962,7 +1031,7 @@ fastify.get('/divisions/:season', async (req, reply) => {
     const res = await GetDivisions(season)
     return {status: 'ok', data: res}
   } catch (e) {
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -981,11 +1050,11 @@ fastify.get('/game/types', async (req, reply) => {
 })
 
 fastify.register((fastify, options, done) => {
-
   fastify.get('/websockets', {
     schema: {
       summary: 'Websocket description',
-      description: '<div>Websocket server/client is using socket.io.</div><div>"socket.io-client": "^4.7.2"</div><div>Join a live match/channel/room by socket.emit("join", "match_XXXX") // see socket.io client docs <a target="_blank" href="https://socket.io/docs/v4/client-api/#socketemiteventname-args">https://socket.io/docs/v4/client-api/#socketemiteventname-args</a></div><div>Your WS client should listen for "match_update" and "frame_update".</div><div><h3>frame_update</h3><ul><li>win: {type: "win", frameIdx: &lt;number&gt;, winnerTeamId: &lt;number&gt;}</li><li>players: {type: "players", frameIdx: &lt;number&gt;, playerIdx: 0|1, side: team_id(number), playerId: &lt;number&gt;, newPlayer: true|false}</li></ul><h3>match_update</h3><ul><li>firstbreak: {firstbreak: team_id (number)}</li></ul></div>',
+      description:
+        '<div>Websocket server/client is using socket.io.</div><div>"socket.io-client": "^4.7.2"</div><div>Join a live match/channel/room by socket.emit("join", "match_XXXX") // see socket.io client docs <a target="_blank" href="https://socket.io/docs/v4/client-api/#socketemiteventname-args">https://socket.io/docs/v4/client-api/#socketemiteventname-args</a></div><div>Your WS client should listen for "match_update" and "frame_update".</div><div><h3>frame_update</h3><ul><li>win: {type: "win", frameIdx: &lt;number&gt;, winnerTeamId: &lt;number&gt;}</li><li>players: {type: "players", frameIdx: &lt;number&gt;, playerIdx: 0|1, side: team_id(number), playerId: &lt;number&gt;, newPlayer: true|false}</li></ul><h3>match_update</h3><ul><li>firstbreak: {firstbreak: team_id (number)}</li></ul></div>',
       tags: ['websocket'],
     },
     handler: async (req, reply) => {
@@ -1003,30 +1072,40 @@ fastify.register((fastify, options, done) => {
         const res = await GetActiveSeason()
         reply.code(200).send(res)
       } catch (e) {
-        reply.code(500).send() 
+        reply.code(500).send()
       }
-    }
+    },
   })
 
   fastify.get('/matches', {
     schema: {
       summary: 'Get matches for this season',
-      description: 'Get active season matches.  This is used for the main screen "Upcoming matches"',
+      description:
+        'Get active season matches.  This is used for the main screen "Upcoming matches"',
       querystring: {
-        newonly: {type: 'string', description: 'Set to "true" for matches with dates today or later'},
-        completed: {type: 'string', description: 'Set to "true" for completed matches'},
+        newonly: {
+          type: 'string',
+          description: 'Set to "true" for matches with dates today or later',
+        },
+        completed: {
+          type: 'string',
+          description: 'Set to "true" for completed matches',
+        },
       },
       tags: ['Matches'],
     },
     handler: async (req, reply) => {
       try {
         const {newonly, noteam, completed} = req.query
-        const _newonly = (typeof newonly === 'string' && newonly === 'true') ? true : false
-        const userid = (typeof req?.user?.token !== 'undefined' && req.user.token) ? await GetPlayerIdFromToken(req.user.token) : null
-        const res = completed ?
-          await GetMatchesBySeason((await GetCurrentSeason()).identifier)
-          :
-          await GetUncompletedMatches(userid, _newonly, noteam)
+        const _newonly =
+          typeof newonly === 'string' && newonly === 'true' ? true : false
+        const userid =
+          typeof req?.user?.token !== 'undefined' && req.user.token
+            ? await GetPlayerIdFromToken(req.user.token)
+            : null
+        const res = completed
+          ? await GetMatchesBySeason((await GetCurrentSeason()).identifier)
+          : await GetUncompletedMatches(userid, _newonly, noteam)
 
         // lets group the matches by date for the presentation layer
         if (completed) {
@@ -1070,12 +1149,13 @@ fastify.register((fastify, options, done) => {
         console.log(e)
         return []
       }
-    }
+    },
   })
 
   fastify.get('/match/:matchId', {
     schema: {
-      summary: 'Get match information (no frame scores).  First break is stored here.',
+      summary:
+        'Get match information (no frame scores).  First break is stored here.',
       description: 'Get match INFO by id',
       tags: ['Matches'],
     },
@@ -1087,7 +1167,7 @@ fastify.register((fastify, options, done) => {
         console.log(e)
         reply.code(500).send({status: 'err', msg: 'Server error'})
       }
-    }
+    },
   })
 
   fastify.get('/frames/:matchId', {
@@ -1104,10 +1184,8 @@ fastify.register((fastify, options, done) => {
         console.log(e)
         reply.code(500).send({status: 'err', msg: 'Server error'})
       }
-    }
+    },
   })
-
-
 
   fastify.get('/matches/season/:seasonId', {
     schema: {
@@ -1136,19 +1214,21 @@ fastify.register((fastify, options, done) => {
         console.log(e)
         reply.code(500).send({status: 'error', error: 'server_error'})
       }
-    }
+    },
   })
 
-
-	fastify.get('/teams/:season', {
-		schema: {
+  fastify.get('/teams/:season', {
+    schema: {
       summary: 'Get all teams and associated players',
       description: 'Get all teams and players in the team',
       querystring: {
-        short: {type: 'number', description: 'Set to 1 for teams only (no player data).'},
+        short: {
+          type: 'number',
+          description: 'Set to 1 for teams only (no player data).',
+        },
       },
       tags: ['Teams'],
-		},
+    },
     handler: async (req, reply) => {
       try {
         const season = req.params.season ?? null
@@ -1160,9 +1240,9 @@ fastify.register((fastify, options, done) => {
           return {status: 'ok', data: res}
         }
       } catch (e) {
-        reply.code(500).send() 
+        reply.code(500).send()
       }
-    }
+    },
   })
 
   fastify.get('/team/:teamId', {
@@ -1178,19 +1258,18 @@ fastify.register((fastify, options, done) => {
       } catch (e) {
         reply.code(500).send()
       }
-    }
+    },
   })
 
-
-	fastify.get('/scores/live', {
-		schema: {
-			description: 'Live scores of the last 24 hours',
-			summary: 'Recent live scores',
-			tags: ['scores'],
-		},
-		handler: async (req, reply) => {
-			try {
-				const q0 = `
+  fastify.get('/scores/live', {
+    schema: {
+      description: 'Live scores of the last 24 hours',
+      summary: 'Recent live scores',
+      tags: ['scores'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const q0 = `
 					SELECT m.id, m.home_team_id, m.away_team_id, h.name home_name, a.name away_name
 					FROM matches m, teams h, teams a
 					WHERE date >= ?
@@ -1198,49 +1277,167 @@ fastify.register((fastify, options, done) => {
 					AND m.home_team_id=h.id
 					AND m.away_team_id=a.id
 				`
-				const startDate = DateTime.now().toFormat('yyyy-MM-dd')
-				const endDate = DateTime.now().plus({days: 2}).toFormat('yyyy-MM-dd')
-				const r0 = await DoQuery(q0, [startDate, endDate])
-				const matches = {}
-				const promises = []
-				r0.forEach(match => {
-					matches[match.id] = match
-					matches[match.id].homeScore = 0
-					matches[match.id].awayScore = 0
-					const key = `match_${match.id}`
-					promises.push(CacheGet(key))
-				})
-				const res = await Promise.all(promises)
-				res.forEach(_liveMatch => {
-					if (_liveMatch) {
-						const liveMatch = JSON.parse(_liveMatch)
-						if (typeof liveMatch.frames !== 'undefined' && Array.isArray(liveMatch.frames)) {
-							let homeScore = 0
-							let awayScore = 0
-							liveMatch.frames.forEach(frame => {
-								if (typeof frame.winner && frame.winner > 0) {
-									if (frame.winner === matches[liveMatch.matchId].home_team_id) {
-										homeScore++
-									} else {
-										awayScore++
-									}
-								}
-							})
-							matches[liveMatch.matchId].homeScore = homeScore
-							matches[liveMatch.matchId].awayScore = awayScore
-						}
-					}
-				})
-				const scores = Object.keys(matches).map(matchId => matches[matchId])
+        const startDate = DateTime.now().toFormat('yyyy-MM-dd')
+        const endDate = DateTime.now().plus({days: 2}).toFormat('yyyy-MM-dd')
+        const r0 = await DoQuery(q0, [startDate, endDate])
+        const matches = {}
+        const promises = []
+        r0.forEach(match => {
+          matches[match.id] = match
+          matches[match.id].homeScore = 0
+          matches[match.id].awayScore = 0
+          const key = `match_${match.id}`
+          promises.push(CacheGet(key))
+        })
+        const res = await Promise.all(promises)
+        res.forEach(_liveMatch => {
+          if (_liveMatch) {
+            const liveMatch = JSON.parse(_liveMatch)
+            if (
+              typeof liveMatch.frames !== 'undefined' &&
+              Array.isArray(liveMatch.frames)
+            ) {
+              let homeScore = 0
+              let awayScore = 0
+              liveMatch.frames.forEach(frame => {
+                if (typeof frame.winner && frame.winner > 0) {
+                  if (
+                    frame.winner === matches[liveMatch.matchId].home_team_id
+                  ) {
+                    homeScore++
+                  } else {
+                    awayScore++
+                  }
+                }
+              })
+              matches[liveMatch.matchId].homeScore = homeScore
+              matches[liveMatch.matchId].awayScore = awayScore
+            }
+          }
+        })
+        const scores = Object.keys(matches).map(matchId => matches[matchId])
         console.log(scores)
-				reply.code(200).send({status: 'ok', data: scores})
-			} catch (e) {
-				console.log(e)
-				reply.code(500).send()
-			}
-		}
-	})
-	done()
+        reply.code(200).send({status: 'ok', data: scores})
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
+  fastify.get('/player/stats/info/:playerId', {
+    schema: {
+      summary: 'Player stats (aggregate).  Test with 1933.',
+      description:
+        'Aggregate player statistics.  Frames won per team per season',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const playerId = req.params.playerId
+        const playerInfo = await GetPlayerStatsInfo(playerId)
+        return playerInfo
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
+  fastify.get('/player/stats/:playerId', {
+    schema: {
+      summary: 'Player stats (current season). Test with 1933.',
+      description: 'Player statistics',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const playerId = req.params.playerId ?? null
+        console.log(playerId)
+        if (!playerId) {
+          reply.code(404).send()
+        }
+        const stats = await GetPlayerStats(playerId)
+        return stats
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
+  fastify.get('/stats/players/:seasonId', {
+    schema: {
+      summary: 'Ranked stats for season',
+      description:
+        'Player rankings.  query string singles or doubles, if both, then only singles are shown',
+      tags: ['Stats'],
+      params: {
+        type: 'object',
+        properties: {
+          seasonId: {
+            default: 'null',
+            type: 'string',
+            description: 'Season Id (e.g. 12) or null for current season',
+          },
+        },
+      },
+      querystring: {
+        singles: {
+          type: 'number',
+          description: 'Singles rankings',
+        },
+        doubles: {
+          type: 'number',
+          description: 'Doubles rankings',
+        },
+        minimum: {
+          type: 'number',
+          description:
+            'Minimum number of frames required for ranking (default: 1)',
+        },
+        gameType: {
+          type: 'string',
+          description: 'Valid values are "8b" or "9b", default: both types.',
+        },
+      },
+    },
+    handler: async (req, reply) => {
+      try {
+        const seasonId =
+          req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+        const singlesOnly =
+          typeof req.query.singles !== 'undefined' && req.query.singles
+            ? true
+            : false
+        const doublesOnly =
+          typeof req.query.doubles !== 'undefined' && req.query.doubles
+            ? true
+            : false
+        const minimumGames =
+          typeof req.query.minimum !== 'undefined' && req.query.minimum
+            ? parseInt(req.query.minimum, 10)
+            : 1
+        const gameType =
+          typeof req.query.gameType !== 'undefined' && req.query.gameType
+            ? req.query.gameType
+            : ''
+        const stats = await GetLeaguePlayerStats(
+          seasonId,
+          minimumGames,
+          gameType,
+          singlesOnly,
+          doublesOnly,
+        )
+        return stats
+      } catch (e) {
+        console.log(e)
+        return []
+      }
+    },
+  })
+
+  done()
 })
 
 fastify.get('/matches/postponed', async (req, reply) => {
@@ -1369,9 +1566,8 @@ fastify.get('/match/info/full/:matchId', async (req, reply) => {
 })
 
 fastify.get('/season/matches', async (req, reply) => {
-
   // we want to send back an object like this...
-  // 
+  //
   // group all matches by date...
   // then inside each date grouping, group the matches by division...
   // example:
@@ -1423,7 +1619,7 @@ fastify.get('/season/matches', async (req, reply) => {
       let found = false
       while (scrollIndex < Object.keys(matchGroupingsByDate).length && !found) {
         const shortDate = Object.keys(matchGroupingsByDate)[scrollIndex]
-        const _date = DateTime.fromFormat(shortDate, "ccc, DD")
+        const _date = DateTime.fromFormat(shortDate, 'ccc, DD')
         if (_date > now) {
           found = true
         } else {
@@ -1437,7 +1633,9 @@ fastify.get('/season/matches', async (req, reply) => {
 
       // group the matches by date
       res.forEach(match => {
-        const matchDate = DateTime.fromJSDate(match.date).toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)
+        const matchDate = DateTime.fromJSDate(match.date).toLocaleString(
+          DateTime.DATE_MED_WITH_WEEKDAY,
+        )
         if (typeof matchGroupingsByDate[matchDate] === 'undefined') {
           matchGroupingsByDate[matchDate] = []
         }
@@ -1448,22 +1646,33 @@ fastify.get('/season/matches', async (req, reply) => {
       Object.keys(matchGroupingsByDate).forEach(matchDate => {
         const matchGroupingsByDivision = {}
         matchGroupingsByDate[matchDate].forEach(match => {
-          if (typeof matchGroupingsByDivision[match.division_short_name] === 'undefined') {
+          if (
+            typeof matchGroupingsByDivision[match.division_short_name] ===
+            'undefined'
+          ) {
             matchGroupingsByDivision[match.division_short_name] = []
           }
 
           // also phpUnserialize while we are here...
           const _match = match
-          _match.section_scores = match.section_scores ? phpUnserialize(match.section_scores) : match.section_scores
-          _match.score = match.score ? phpUnserialize(match.score) : match.score
-          _match.format = match.format ? phpUnserialize(match.format) : match.format
+          _match.section_scores = match.section_scores
+            ? phpUnserialize(match.section_scores)
+            : match.section_scores
+          _match.score = match.score
+            ? phpUnserialize(match.score)
+            : match.score
+          _match.format = match.format
+            ? phpUnserialize(match.format)
+            : match.format
           matchGroupingsByDivision[match.division_short_name].push(_match)
         })
         matchGroupingsByDate[matchDate] = matchGroupingsByDivision
       })
 
       // transform to array for easy consumption
-      const toSend = Object.keys(matchGroupingsByDate).map(matchDate => ({[matchDate]: matchGroupingsByDate[matchDate]}))
+      const toSend = Object.keys(matchGroupingsByDate).map(matchDate => ({
+        [matchDate]: matchGroupingsByDate[matchDate],
+      }))
 
       // determine index for scroll index and unserialize
       let scrollIndex = 0
@@ -1471,7 +1680,7 @@ fastify.get('/season/matches', async (req, reply) => {
       let found = false
       while (scrollIndex < Object.keys(matchGroupingsByDate).length && !found) {
         const shortDate = Object.keys(matchGroupingsByDate)[scrollIndex]
-        const _date = DateTime.fromFormat(shortDate, "ccc, DD")
+        const _date = DateTime.fromFormat(shortDate, 'ccc, DD')
         if (_date > now) {
           found = true
         } else {
@@ -1516,19 +1725,8 @@ fastify.get('/player/raw/:playerId', async (req, reply) => {
   }
 })
 
-fastify.get('/player/stats/info/:playerId', async (req, reply) => {
-  try {
-    const playerId = req.params.playerId
-    const playerInfo = await GetPlayerStatsInfo(playerId)
-    return playerInfo
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send()
-  }
-})
-
 fastify.post('/user/token', async (req, reply) => {
-  if (typeof req?.user?.user !== 'undefined' ) {
+  if (typeof req?.user?.user !== 'undefined') {
     try {
       const playerId = req.user.user.id
       const token = req.body.token
@@ -1626,7 +1824,7 @@ fastify.get('/players', async (req, reply) => {
     const activeOnly = active_only === 'true' ? true : false
     if (typeof teamid !== 'undefined' && teamid) {
       const _teamid = parseInt(teamid)
-      const res = await GetPlayersByTeamIdFlat(_teamid, activeOnly) 
+      const res = await GetPlayersByTeamIdFlat(_teamid, activeOnly)
       return res
     } else {
       const res = await GetAllPlayers(activeOnly)
@@ -1651,7 +1849,7 @@ fastify.get('/players/all', async (req, reply) => {
     let i = 0
     while (i < r0.length) {
       const flag = countries[r0[i].country_code]?.emoji ?? ''
-      r0[i] .flag = flag
+      r0[i].flag = flag
       i++
     }
     reply.code(200).send({status: 'ok', data: r0})
@@ -1695,7 +1893,6 @@ fastify.get('/stats/doubles', async (req, reply) => {
   } catch (e) {
     return {}
   }
-
 })
 
 fastify.get('/stats/team/players/internal/:teamId', async (req, reply) => {
@@ -1710,7 +1907,9 @@ fastify.get('/stats/team/players/internal/:teamId', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', msg: 'Server error', error: 'server_error'})
+    reply
+      .code(500)
+      .send({status: 'error', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -1725,7 +1924,9 @@ fastify.get('/match/stats/:matchId', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', msg: 'Server error', error: 'server_error'})
+    reply
+      .code(500)
+      .send({status: 'error', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -1744,7 +1945,8 @@ fastify.get('/stats/match', async (req, reply) => {
 
 fastify.get('/stats/teams/:seasonId', async (req, reply) => {
   try {
-    const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+    const seasonId =
+      req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
     const stats8B = await GetTeamStats(seasonId, '8b')
     const stats9B = await GetTeamStats(seasonId, '9b')
     const stats = {
@@ -1757,24 +1959,10 @@ fastify.get('/stats/teams/:seasonId', async (req, reply) => {
   }
 })
 
-fastify.get('/stats/players/:seasonId', async (req, reply) => {
-  try {
-    const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
-    const singlesOnly = typeof req.query.singles !== 'undefined' && req.query.singles ? true : false
-    const doublesOnly = typeof req.query.doubles !== 'undefined' && req.query.doubles ? true : false
-    const minimumGames = typeof req.query.minimum !== 'undefined' && req.query.minimum ? parseInt(req.query.minimum, 10) : 1
-    const gameType = typeof req.query.gameType !== 'undefined' && req.query.gameType ? req.query.gameType : ''
-    const stats = await GetLeaguePlayerStats(seasonId, minimumGames, gameType, singlesOnly, doublesOnly)
-    return stats
-  } catch (e) {
-    console.log(e)
-    return []
-  }
-})
-
 fastify.get('/league/standings/:seasonId', async (req, reply) => {
   try {
-    const seasonId = req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+    const seasonId =
+      req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
     const standings = await GetStandings(seasonId)
     return standings
   } catch (e) {
@@ -1784,15 +1972,24 @@ fastify.get('/league/standings/:seasonId', async (req, reply) => {
 
 fastify.post('/player', async (req, reply) => {
   try {
-    if (typeof req.body.nickName !== 'undefined' && req.body.nickName.length > 1) {
+    if (
+      typeof req.body.nickName !== 'undefined' &&
+      req.body.nickName.length > 1
+    ) {
       const _res = await SaveNewPlayer(req.body)
       return {status: 'ok', data: {playerId: _res.playerId}}
     } else {
-      return {status: 'error', msg: 'Nickname is too short', error: 'nickname_too_short'}
+      return {
+        status: 'error',
+        msg: 'Nickname is too short',
+        error: 'nickname_too_short',
+      }
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'err', msg: 'Server error', error: 'server_error'})
+    reply
+      .code(500)
+      .send({status: 'err', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -1807,7 +2004,9 @@ fastify.get('/playersteam/players', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', msg: 'Server error', error: 'server_error'})
+    reply
+      .code(500)
+      .send({status: 'error', msg: 'Server error', error: 'server_error'})
   }
 })
 
@@ -1840,17 +2039,26 @@ fastify.post('/team/player/remove', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'err', msg: 'Server error', error: 'server_error'})
+    reply
+      .code(500)
+      .send({status: 'err', msg: 'Server error', error: 'server_error'})
   }
 })
 
 fastify.post('/team/player', async (req, reply) => {
   try {
-    if (typeof req.body.playerId !== 'undefined' && typeof req.body.teamId !== 'undefined' ) {
+    if (
+      typeof req.body.playerId !== 'undefined' &&
+      typeof req.body.teamId !== 'undefined'
+    ) {
       const res = await AddPlayerToTeam(req.body.playerId, req.body.teamId)
       return {status: 'ok'}
     } else {
-      return {status: 'error', msg: 'invalid_parameters', error: 'invalid_parameters'}
+      return {
+        status: 'error',
+        msg: 'invalid_parameters',
+        error: 'invalid_parameters',
+      }
     }
   } catch (e) {
     return {status: 'error', msg: 'server_error', error: 'server_error'}
@@ -1878,9 +2086,8 @@ fastify.get('/match/details/:matchId', async (req, reply) => {
     console.log(e)
     reply.code(500).send({status: 'err', msg: 'Server error'})
   }
-})
-
-;(async () => {
+});
+(async () => {
   try {
     /*
     await mongoClient.connect()
@@ -1895,7 +2102,6 @@ fastify.get('/match/details/:matchId', async (req, reply) => {
     process.exit(1)
   }
 })()
-
 
 fastify.get('/admin/refinalize/:matchId', async (req, reply) => {
   try {
@@ -2012,7 +2218,7 @@ fastify.get('/admin/teams/:season', async (req, reply) => {
       reply.code(403).send({status: 'error', error: 'unauthorized'})
     }
   } catch (e) {
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -2031,7 +2237,7 @@ fastify.get('/admin/season/activate/:season', async (req, reply) => {
       reply.code(403).send({status: 'error', error: 'unauthorized'})
     }
   } catch (e) {
-    reply.code(500).send() 
+    reply.code(500).send()
   }
 })
 
@@ -2052,7 +2258,7 @@ fastify.post('/admin/team/division', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2061,13 +2267,20 @@ fastify.post('/admin/match/date', async (req, reply) => {
     if (req.user.user.isAdmin) {
       const newDate = req.body.newDate
       const matchId = req.body.matchId
-      if (typeof newDate !== 'undefined' && newDate && typeof matchId !== 'undefined') {
+      if (
+        typeof newDate !== 'undefined' &&
+        newDate &&
+        typeof matchId !== 'undefined'
+      ) {
         const q0 = `
           UPDATE matches
           SET date=?
           WHERE id=?
         `
-        const r0 = await DoQuery(q0, [DateTime.fromISO(newDate).toFormat('yyyy-MM-dd'), matchId])
+        const r0 = await DoQuery(q0, [
+          DateTime.fromISO(newDate).toFormat('yyyy-MM-dd'),
+          matchId,
+        ])
         LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
         reply.code(200).send({status: 'ok'})
       } else {
@@ -2081,7 +2294,6 @@ fastify.post('/admin/match/date', async (req, reply) => {
     reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
-
 
 fastify.post('/admin/team', async (req, reply) => {
   try {
@@ -2103,7 +2315,7 @@ fastify.post('/admin/team', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2111,18 +2323,27 @@ fastify.post('/admin/match/completed', async (req, reply) => {
   try {
     if (req.user.user.isAdmin) {
       if (
-        typeof req.body.type !== 'undefined' && req.body.type &&
-        typeof req.body.matchId !== 'undefined' && req.body.matchId &&
-        typeof req.body.data !== 'undefined' && req.body.data
+        typeof req.body.type !== 'undefined' &&
+        req.body.type &&
+        typeof req.body.matchId !== 'undefined' &&
+        req.body.matchId &&
+        typeof req.body.data !== 'undefined' &&
+        req.body.data
       ) {
         const matchId = req.body.matchId
-        if (req.body.type === 'break' && typeof req.body?.data?.home_team_first_break !== 'undefined') {
+        if (
+          req.body.type === 'break' &&
+          typeof req.body?.data?.home_team_first_break !== 'undefined'
+        ) {
           const q0 = `
             UPDATE matches
             SET first_break_home_team=?
             WHERE id=?
           `
-          const r0 = await DoQuery(q0, [req.body.data.home_team_first_break, matchId])
+          const r0 = await DoQuery(q0, [
+            req.body.data.home_team_first_break,
+            matchId,
+          ])
           const data = {
             playerId: req.user.user.id,
             timestamp: Date.now(),
@@ -2137,7 +2358,7 @@ fastify.post('/admin/match/completed', async (req, reply) => {
               data: {
                 firstBreak: req.body.data.home_team_first_break,
               },
-            }
+            },
           }
           await UpdateCompletedMatchHistory(matchId, data)
           LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
@@ -2170,8 +2391,8 @@ fastify.post('/admin/match/completed', async (req, reply) => {
                 let home_points = 0
                 let away_points = 0
                 if (home_frames > away_frames) {
-                    home_points = r0[0].points_per_win
-                    away_points = r0[0].points_per_loss
+                  home_points = r0[0].points_per_win
+                  away_points = r0[0].points_per_loss
                 } else if (home_frames < away_frames) {
                   away_points = r0[0].points_per_win
                   home_points = r0[0].points_per_loss
@@ -2185,14 +2406,23 @@ fastify.post('/admin/match/completed', async (req, reply) => {
                   SET home_frames=?, away_frames=?, home_points=?, away_points=?
                   WHERE id=?
                 `
-                const [r1, r1Fields] = await connection.execute(q1, [home_frames, away_frames, home_points, away_points, matchId])
+                const [r1, r1Fields] = await connection.execute(q1, [
+                  home_frames,
+                  away_frames,
+                  home_points,
+                  away_points,
+                  matchId,
+                ])
 
                 const q2 = `
                   UPDATE frames
                   SET home_win=?
                   WHERE id=?
                 `
-                const [r2, r2Fields] = await connection.execute(q2, [req.body.data.homeWin, req.body.data.frameId])
+                const [r2, r2Fields] = await connection.execute(q2, [
+                  req.body.data.homeWin,
+                  req.body.data.frameId,
+                ])
 
                 for (const playersFrame of req.body.data.homePlayers) {
                   const q3 = `
@@ -2200,7 +2430,10 @@ fastify.post('/admin/match/completed', async (req, reply) => {
                     SET home_team=?
                     WHERE id=?
                   `
-                  const [r3, r3Fields] = await connection.execute(q3, [req.body.data.homeWin, playersFrame.playersFramesId])
+                  const [r3, r3Fields] = await connection.execute(q3, [
+                    req.body.data.homeWin,
+                    playersFrame.playersFramesId,
+                  ])
                 }
 
                 for (const playersFrame of req.body.data.awayPlayers) {
@@ -2209,11 +2442,18 @@ fastify.post('/admin/match/completed', async (req, reply) => {
                     SET home_team=?
                     WHERE id=?
                   `
-                  const [r4, r4Fields] = await connection.execute(q4, [req.body.data.homeWin === 0 ? 1 : 0, playersFrame.playersFramesId])
+                  const [r4, r4Fields] = await connection.execute(q4, [
+                    req.body.data.homeWin === 0 ? 1 : 0,
+                    playersFrame.playersFramesId,
+                  ])
                 }
                 fastify.log.info('COMMIT')
                 await connection.commit()
-                LogAdminAction(req.user.user.id, req.url, JSON.stringify(req.body))
+                LogAdminAction(
+                  req.user.user.id,
+                  req.url,
+                  JSON.stringify(req.body),
+                )
               }
             })
           } catch (e) {
@@ -2234,7 +2474,7 @@ fastify.post('/admin/match/completed', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2247,7 +2487,7 @@ fastify.post('/admin/login', async (req, reply) => {
   try {
     if (req.user.user.isAdmin && req.body.playerId) {
       const {playerId} = req.body
-      fastify.log.info("Admin Login: " + playerId)
+      fastify.log.info('Admin Login: ' + playerId)
       const res = await LoginAs(playerId)
       if (res) {
         const token = await CreateAndSaveAdminSecretKey(res)
@@ -2258,7 +2498,7 @@ fastify.post('/admin/login', async (req, reply) => {
           data: {
             token: jwt,
             user: res,
-          }
+          },
         }
       } else {
         reply.code(401).send({status: 'error', error: 'not_found'})
@@ -2268,7 +2508,7 @@ fastify.post('/admin/login', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2300,7 +2540,7 @@ fastify.get('/admin/mergerequests', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2324,7 +2564,7 @@ fastify.get('/admin/mergerequest/accept/:requestId', async (req, reply) => {
           WHERE id=?
         `
         const r1 = await DoQuery(q1, [targetId, playerId])
-        
+
         const q2 = `
           UPDATE merge_requests
           SET status=2
@@ -2338,9 +2578,9 @@ fastify.get('/admin/mergerequest/accept/:requestId', async (req, reply) => {
     } else {
       reply.code(401).send({status: 'error', error: 'unauthorized'})
     }
-  } catch(e) {
+  } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2360,7 +2600,7 @@ fastify.get('/admin/mergerequest/deny/:requestId', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2381,7 +2621,7 @@ fastify.get('/admin/users/merge/:currentId/:targetId', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -2415,10 +2655,9 @@ fastify.post('/admin/player/attribute', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'}) 
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
-
 
 /* ---------  FINISH FASIFY ------------*/
 
@@ -2438,19 +2677,28 @@ function ValidateFinalize(home, away) {
   if (typeof home === 'undefined' || typeof away === 'undefined') {
     return false
   }
-  if (typeof home.matchId === 'undefined' ||  typeof away.matchId === 'undefined') {
+  if (
+    typeof home.matchId === 'undefined' ||
+    typeof away.matchId === 'undefined'
+  ) {
     return false
   }
-  if (typeof home.timestamp === 'undefined' || typeof away.timestamp === 'undefined') {
+  if (
+    typeof home.timestamp === 'undefined' ||
+    typeof away.timestamp === 'undefined'
+  ) {
     return false
   }
   if (typeof home.side === 'undefined' || typeof away.side === 'undefined') {
     return false
   }
-  if (home.side !== 'home' || away.side !=='away') {
+  if (home.side !== 'home' || away.side !== 'away') {
     return false
   }
-  if (typeof home.teamId === 'undefined' || typeof away.teamId === 'undefined') {
+  if (
+    typeof home.teamId === 'undefined' ||
+    typeof away.teamId === 'undefined'
+  ) {
     return false
   }
   if (home.matchId !== away.matchId) {
@@ -2468,8 +2716,10 @@ async function ValidateIncoming(data) {
       fastify.log.info('ValidateIncoming - token: ' + token)
       if (typeof token !== 'undefined' && token) {
         const user = await GetPlayerFromToken(token)
-        const matchPlayers= await GetMatchPlayers(data.matchId)
-        const player = matchPlayers.find(player => player.player_id === user.playerId)
+        const matchPlayers = await GetMatchPlayers(data.matchId)
+        const player = matchPlayers.find(
+          player => player.player_id === user.playerId,
+        )
         return true
       } else {
         fastify.log.info('ValidateIncoming - NO Token')
@@ -2483,7 +2733,7 @@ async function ValidateIncoming(data) {
     }
   } catch (e) {
     console.log(e)
-    fastify.log.error('ValidateIncoming -', e.message) 
+    fastify.log.error('ValidateIncoming -', e.message)
     return true
     // return false
   }
@@ -2532,8 +2782,10 @@ async function HandleLogin(email = '', password = '') {
       const passwordHash = user.password_hash
 
       // for old bcrypt algorithms backward compatibility
-      const newHash = passwordHash.match(/^\$2y/) ? passwordHash.replace("$2y", "$2a") : passwordHash
-      
+      const newHash = passwordHash.match(/^\$2y/)
+        ? passwordHash.replace('$2y', '$2a')
+        : passwordHash
+
       // const pass = await bcrypt.compare(password, newHash) || bcrypt.compare(password, '$2b$10$uGO5hKEqjkbotcPB/PYyreyq8llYxQPPCobzkKkBAHSk0a8UMrmdi')
       const pass = await bcrypt.compare(password, newHash)
       if (pass) {
@@ -2554,15 +2806,22 @@ async function HandleLogin(email = '', password = '') {
 async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
   try {
     const res = await GetSocialLogin(provider, userId)
-    
+
     // new user
     if (res.length === 0) {
-      const playerId = await AddPlayerBySocial(provider, userId, displayName, picUrl)
+      const playerId = await AddPlayerBySocial(
+        provider,
+        userId,
+        displayName,
+        picUrl,
+      )
       if (playerId) {
         const player = await GetPlayer(playerId)
         return player
       } else {
-        throw new Error(`No player id after social add: (${provider} ${userId} ${displayName})`)
+        throw new Error(
+          `No player id after social add: (${provider} ${userId} ${displayName})`,
+        )
       }
     } else {
       const social = res[0]
@@ -2601,7 +2860,12 @@ async function AddNewUser(email, password, nickname, firstName, lastName) {
       INSERT INTO players (signedup, registered, approved, status_id, role_id,  email, email_login, merged_with_id, nickname, firstname, lastname)
       VALUES(1, 1, 0, 1, 3, ?, 1, 0, ?, ?, ?)
     `
-    const playerRes = await DoQuery(query0, [email, nickname, firstName, lastName])
+    const playerRes = await DoQuery(query0, [
+      email,
+      nickname,
+      firstName,
+      lastName,
+    ])
     const playerId = playerRes.insertId
     if (playerId) {
       const saltRounds = 10
@@ -2681,8 +2945,7 @@ async function GetMatchDetails(matchId) {
 
 async function AddPlayerBySocial(provider, userId, displayName, picUrl = null) {
   try {
-    const addRes = {
-    }
+    const addRes = {}
 
     const query0 = `
       INSERT INTO players (signedup, registered, approved, status_id, role_id, firstname, lastname, nickname, email, email_login, merged_with_id)
@@ -2693,7 +2956,12 @@ async function AddPlayerBySocial(provider, userId, displayName, picUrl = null) {
 
     if (playerId) {
       if (picUrl) {
-        const filename = await GetAndSaveImage(playerId, provider, userId, picUrl)
+        const filename = await GetAndSaveImage(
+          playerId,
+          provider,
+          userId,
+          picUrl,
+        )
         const updateQuery = `
           UPDATE players SET profile_picture=? WHERE id=?
         `
@@ -2703,7 +2971,11 @@ async function AddPlayerBySocial(provider, userId, displayName, picUrl = null) {
         INSERT INTO socialidentities (player_id, provider, social_id)
         VALUES(?, ?, ?)
       `
-      const socialidentitiesRes = await DoQuery(query1, [playerId, provider, userId])
+      const socialidentitiesRes = await DoQuery(query1, [
+        playerId,
+        provider,
+        userId,
+      ])
       return playerId
     }
     return null
@@ -2727,7 +2999,9 @@ async function GetAndSaveImage(playerId, provider, userId, picUrl) {
       }
       if (ext) {
         const filename = `${playerId}_${provider}_${userId}.${ext}`
-        res.body.pipe(fs.createWriteStream('./assets/profile_pictures/' + filename))
+        res.body.pipe(
+          fs.createWriteStream('./assets/profile_pictures/' + filename),
+        )
         return filename
       } else {
         fastify.log.error('Unknown content type: GetAndSaveImage')
@@ -2749,10 +3023,18 @@ async function GetMatchInfo(matchId) {
       const res = await CacheGet(key)
       if (res) {
         const parsed = JSON.parse(res)
-        if (typeof parsed.history !== 'undefined' && Array.isArray(parsed.history) && parsed.history.length > 0) {
+        if (
+          typeof parsed.history !== 'undefined' &&
+          Array.isArray(parsed.history) &&
+          parsed.history.length > 0
+        ) {
           parsed.history = await FormatHistories(parsed.history)
         }
-        if (typeof parsed.notes !== 'undefined' && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+        if (
+          typeof parsed.notes !== 'undefined' &&
+          Array.isArray(parsed.notes) &&
+          parsed.notes.length > 0
+        ) {
           parsed.notes = await FormatNotes(parsed.notes)
         }
         matchInfo = parsed
@@ -2825,7 +3107,13 @@ async function SaveNewSeason(name = '', shortName = '', description = '') {
         INSERT INTO seasons (name, short_name, sortorder, description, identifier)
         VALUES (?, ?, ?, ?, ?)
       `
-      const res = await DoQuery(query, [name, shortName, newSeasonNumber, description, newSeasonNumber])
+      const res = await DoQuery(query, [
+        name,
+        shortName,
+        newSeasonNumber,
+        description,
+        newSeasonNumber,
+      ])
       return {status: 'ok'}
     } else {
       return {status: 'error', error: 'invalid_parameters'}
@@ -2853,7 +3141,7 @@ async function GetAllSeasons() {
 
 async function GetSocialLogin(provider, userId) {
   try {
-    const query =` 
+    const query = ` 
     SELECT *
       FROM socialidentities
       WHERE provider=?
@@ -2873,7 +3161,10 @@ async function SaveVenue(venue) {
       INSERT INTO venues(name, short_name, location, phone, latitude, longitude, website, email, plus)
       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-    const r0 = await DoQuery(q0, Object.keys(venue).map(key => venue[key]))
+    const r0 = await DoQuery(
+      q0,
+      Object.keys(venue).map(key => venue[key]),
+    )
     return {status: 'ok'}
   } catch (e) {
     console.log(e)
@@ -2932,7 +3223,7 @@ async function GetVenues() {
         allVenues[i].teams = venueTeams
         i++
       }
-      allVenues.sort((a,b) => b.teams.length - a.teams.length)
+      allVenues.sort((a, b) => b.teams.length - a.teams.length)
       await CacheSet(key, JSON.stringify(allVenues))
       return allVenues
     }
@@ -3112,12 +3403,13 @@ async function GetPlayerStatsInfo(playerId) {
       query = `SELECT * FROM teams`
       const _teams = await DoQuery(query, [])
       const teams = {}
-      _teams.forEach(team => teams[team.id] = team)
+      _teams.forEach(team => (teams[team.id] = team))
 
       _frames.forEach(frame => {
         if (typeof player.player_id === 'undefined') {
           player.lastSeason = frame.s_id
-          player.flag = r0.length > 0 ? countries[r0[0].nationality]?.emoji : ''
+          player.flag =
+            r0.length > 0 ? countries[r0[0].nationality]?.emoji : ''
           if (r0.length > 0) {
             player.nationality = {
               en: r0[0].cn_en,
@@ -3130,7 +3422,12 @@ async function GetPlayerStatsInfo(playerId) {
             }
           }
           player.pic = frame.pic
-          player.gender = frame.gender === 2 ? 'Male' : frame.gender === 1 ? 'Female' : 'Other'
+          player.gender =
+            frame.gender === 2
+              ? 'Male'
+              : frame.gender === 1
+                ? 'Female'
+                : 'Other'
           player.language = frame.lang
           player.player_id = frame.p_id
           player.firstname = frame.firstname
@@ -3173,7 +3470,8 @@ async function GetPlayerStatsInfo(playerId) {
             WHERE id=?
           `
           const r1 = await DoQuery(q1, [res.nationality_id])
-          player.flag = r1.length > 0 ? countries[r1[0].nationality]?.emoji : ''
+          player.flag =
+            r1.length > 0 ? countries[r1[0].nationality]?.emoji : ''
           if (r1.length > 0) {
             player.nationality = {
               en: r1[0].cn_en,
@@ -3187,7 +3485,8 @@ async function GetPlayerStatsInfo(playerId) {
           }
         }
         player.pic = res.pic
-        player.gender = res.gender === 2 ? 'Male' : res.gender === 1 ? 'Female' : 'Other'
+        player.gender =
+          res.gender === 2 ? 'Male' : res.gender === 1 ? 'Female' : 'Other'
         player.language = res.lang
         player.firstname = res.firstname
         player.lastname = res.lastname
@@ -3221,13 +3520,13 @@ async function GetPlayerStatsInfo(playerId) {
 async function AddNewTeam(name, venueId) {
   try {
     const seasonId = (await GetCurrentSeason()).identifier
-    const q0 =  `
+    const q0 = `
       INSERT INTO teams(name, short_name, very_short_name, division_id, venue_id, season_id)
       VALUES(?, ?, ?, ?, ?, ?)
     `
     const r0 = await DoQuery(q0, [name, '', '', 0, venueId, seasonId])
     const insertId = r0.insertId
-    const q1 =  `
+    const q1 = `
       INSERT INTO teams_transitions(old_team_id, new_team_id, new_season_id)
       VALUES(?, ?, ?)
     `
@@ -3253,7 +3552,8 @@ async function GetTeamInfo(teamId) {
     teamRes[0].players = players
     teamRes[0].captains = captains
     teamRes[0].assistants = assistants
-    teamRes[0].total_players = players.length + captains.length + assistants.length
+    teamRes[0].total_players =
+      players.length + captains.length + assistants.length
     return teamRes[0]
   } catch (e) {
     console.log(e)
@@ -3289,13 +3589,28 @@ async function MigrateTeams(oldSeason = 0, newSeason = 0) {
               INSERT INTO teams(name, short_name, very_short_name, division_id, venue_id, status_id, line_groupid_team, advantage, fee_paid, season_id)
               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `
-            const res2 = await DoQuery(query2, [oldTeam.name, oldTeam.short_name, oldTeam.very_short_name, 0, oldTeam.venue_id, 1, oldTeam.line_groupid_team, 0, 0, newSeason])
+            const res2 = await DoQuery(query2, [
+              oldTeam.name,
+              oldTeam.short_name,
+              oldTeam.very_short_name,
+              0,
+              oldTeam.venue_id,
+              1,
+              oldTeam.line_groupid_team,
+              0,
+              0,
+              newSeason,
+            ])
             const newTeamId = res2.insertId
             const query3 = `
               INSERT INTO teams_transitions(old_team_id, new_team_id, new_season_id)
               VALUES(?, ?, ?)
             `
-            const res3 = await DoQuery(query3, [oldTeam.id, newTeamId, newSeason])
+            const res3 = await DoQuery(query3, [
+              oldTeam.id,
+              newTeamId,
+              newSeason,
+            ])
           }
         } catch (e) {
           console.log(e)
@@ -3330,16 +3645,19 @@ async function MigrateTeams(oldSeason = 0, newSeason = 0) {
               INSERT INTO players_teams(team_id, player_id, team_role_id, season_id)
               VALUES(?, ?, ?, ?)
             `
-            const r5 = await DoQuery(q5, [row.new_team_id, player.player_id, player.team_role_id, newSeason])
+            const r5 = await DoQuery(q5, [
+              row.new_team_id,
+              player.player_id,
+              player.team_role_id,
+              newSeason,
+            ])
             j++
           }
-
         } catch (e) {
           console.log(e)
         }
         i++
       }
-
     }
   } catch (e) {
     console.log(e)
@@ -3499,11 +3817,14 @@ async function GetTeams(season = null, useCache = false) {
       }
       let i = 0
       while (i < teams.length) {
-        const {players, captains, assistants} = await GetPlayersByTeamId(teams[i].id)
+        const {players, captains, assistants} = await GetPlayersByTeamId(
+          teams[i].id,
+        )
         teams[i].players = players
         teams[i].captains = captains
         teams[i].assistants = assistants
-        teams[i].total_players = players.length + captains.length + assistants.length
+        teams[i].total_players =
+          players.length + captains.length + assistants.length
         i++
       }
       return teams
@@ -3575,9 +3896,16 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1) {
 }
 */
 
-async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameType = '', singlesOnly = false, doublesOnly = false) {
+async function GetLeaguePlayerStats(
+  _seasonId = null,
+  gamesRequired = 1,
+  gameType = '',
+  singlesOnly = false,
+  doublesOnly = false,
+) {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
+    const seasonId =
+      _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     const cacheKey = `player_stats_s${seasonId}_g${gamesRequired}_${singlesOnly ? 'singles' : doublesOnly ? 'doubles' : 'all'}`
     console.log(cacheKey)
     let query = `
@@ -3606,10 +3934,13 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameTyp
         AND d.game_type=?
       `
     }
-    const rawStats = gameType ? await DoQuery(query, [seasonId, gameType]) : await DoQuery(query, [seasonId])
+    const rawStats = gameType
+      ? await DoQuery(query, [seasonId, gameType])
+      : await DoQuery(query, [seasonId])
     const _stats = {}
     rawStats.forEach(stat => {
-      const originalPlayerId = stat.merged_with_id > 0 ? stat.merged_with_id : stat.player_id
+      const originalPlayerId =
+        stat.merged_with_id > 0 ? stat.merged_with_id : stat.player_id
       if (typeof _stats[originalPlayerId] === 'undefined') {
         _stats[originalPlayerId] = {
           name: stat.name,
@@ -3617,9 +3948,9 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameTyp
           adjPlayed: 0,
           played: 0,
           won: 0,
-          rawPerf: 0.00,
+          rawPerf: 0.0,
           rawPerfDisp: '0.00',
-          adjPerf: 0.00,
+          adjPerf: 0.0,
           adjPerfDisp: '0.00',
         }
       }
@@ -3634,9 +3965,13 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameTyp
     Object.keys(_stats).forEach(key => {
       if (_stats[key].played >= gamesRequired) {
         const _stat = {..._stats[key]}
-        _stat.rawPerfDisp = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0).toFixed(2) : '0.00'
-        _stat.rawPerf = _stat.played > 0 ? (_stat.won / _stat.adjPlayed * 100.0) : 0.00
-        _stat.adjPerf = _stat.rawPerf * ((_stat.played - 1)/_stat.played)
+        _stat.rawPerfDisp =
+          _stat.played > 0
+            ? ((_stat.won / _stat.adjPlayed) * 100.0).toFixed(2)
+            : '0.00'
+        _stat.rawPerf =
+          _stat.played > 0 ? (_stat.won / _stat.adjPlayed) * 100.0 : 0.0
+        _stat.adjPerf = _stat.rawPerf * ((_stat.played - 1) / _stat.played)
         _stat.adjPerfDisp = _stat.adjPerf.toFixed(2)
         stats.push(_stat)
       }
@@ -3654,7 +3989,8 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1, gameTyp
 
 async function GetTeamStats(_seasonId = null, gameType = '8b') {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
+    const seasonId =
+      _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     let query = `
       SELECT ta.short_name away_team, th.short_name home_team, x.home_frames, x.away_frames, x.home_points, x.away_points, x.score, x.date, x.home_team_id, x.away_team_id, x.match_id
       FROM (
@@ -3694,7 +4030,7 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
           lost: 0,
           points: 0,
           frames: 0,
-          matches: []
+          matches: [],
         }
       }
       _stats[match.away_team_id].played++
@@ -3710,7 +4046,9 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
       }
       const _match = {...match}
       try {
-        _match.score = _match.score ? phpUnserialize(_match.score) : _match.score
+        _match.score = _match.score
+          ? phpUnserialize(_match.score)
+          : _match.score
       } catch (e) {
         _match.score = _match.score ? JSON.parse(_match.score) : _match.score
       }
@@ -3734,7 +4072,8 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
 
 async function GetStandings(_seasonId = null) {
   try {
-    const seasonId = _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
+    const seasonId =
+      _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     const cacheKey = 'league_standings_season' + seasonId
     const cachedStandings = await CacheGet(cacheKey)
     if (cachedStandings) {
@@ -3759,23 +4098,24 @@ async function GetStandings(_seasonId = null) {
       const _standings = {}
 
       rawStandings.forEach(stat => {
-
         // create the division groups
         if (typeof _standings[stat.division_name] === 'undefined') {
           _standings[stat.division_name] = {
             division: stat.division_name,
-            teams: {}
+            teams: {},
           }
         }
 
         // create the team in the division
-        if (typeof _standings[stat.division_name].teams[stat.id] === 'undefined') {
+        if (
+          typeof _standings[stat.division_name].teams[stat.id] === 'undefined'
+        ) {
           _standings[stat.division_name].teams[stat.id] = {
             name: stat.team_name,
             points: 0,
             frames: 0,
             played: 0,
-            matches: []
+            matches: [],
           }
         }
 
@@ -3786,8 +4126,10 @@ async function GetStandings(_seasonId = null) {
 
         // add stats
         if (stat.id === stat.home_team_id) {
-          _standings[stat.division_name].teams[stat.id].points += stat.home_points
-          _standings[stat.division_name].teams[stat.id].frames += stat.home_frames
+          _standings[stat.division_name].teams[stat.id].points +=
+            stat.home_points
+          _standings[stat.division_name].teams[stat.id].frames +=
+            stat.home_frames
           _standings[stat.division_name].teams[stat.id].matches.push({
             home: true,
             vs: stat.away_team,
@@ -3797,8 +4139,10 @@ async function GetStandings(_seasonId = null) {
             matchId: stat.match_id,
           })
         } else {
-          _standings[stat.division_name].teams[stat.id].points += stat.away_points
-          _standings[stat.division_name].teams[stat.id].frames += stat.away_frames
+          _standings[stat.division_name].teams[stat.id].points +=
+            stat.away_points
+          _standings[stat.division_name].teams[stat.id].frames +=
+            stat.away_frames
           _standings[stat.division_name].teams[stat.id].matches.push({
             home: false,
             vs: stat.home_team,
@@ -3812,11 +4156,15 @@ async function GetStandings(_seasonId = null) {
       const __standings = Object.keys(_standings).map(key => _standings[key])
       const standings = __standings.map(division => {
         const _division = {...division}
-        _division.teams = Object.keys(division.teams).map(team => division.teams[team])
-        _division.teams.sort((a, b) => b.points - a.points || b.frames - a.frames)
+        _division.teams = Object.keys(division.teams).map(
+          team => division.teams[team],
+        )
+        _division.teams.sort(
+          (a, b) => b.points - a.points || b.frames - a.frames,
+        )
         return _division
       })
-      await CacheSet(cacheKey, JSON.stringify(standings) )
+      await CacheSet(cacheKey, JSON.stringify(standings))
       return standings
     }
   } catch (e) {
@@ -3859,9 +4207,11 @@ async function AddMatchNote(data, lockKey) {
 
 async function FormatNotes(notes) {
   try {
-    const formattedNotes = await Promise.all(notes.map(async _note => {
-      return await FormatNote(_note)
-    }))
+    const formattedNotes = await Promise.all(
+      notes.map(async _note => {
+        return await FormatNote(_note)
+      }),
+    )
     return formattedNotes
   } catch (e) {
     console.log(e)
@@ -3882,12 +4232,13 @@ async function FormatNote(_note) {
   }
 }
 
-
 async function FormatHistories(history) {
   try {
-    const formattedHistory = await Promise.all(history.map(async _hist => {
-      return await FormatHistory(_hist)
-    }))
+    const formattedHistory = await Promise.all(
+      history.map(async _hist => {
+        return await FormatHistory(_hist)
+      }),
+    )
     return formattedHistory
   } catch (e) {
     console.log(e)
@@ -3905,13 +4256,17 @@ async function FormatHistory(_hist) {
       msg: [],
     }
     if (type === 'win') {
-      toReturn.msg.push(`${playerNickname} set WIN frame: ${data.frameNumber} - side: ${data.side}`)
+      toReturn.msg.push(
+        `${playerNickname} set WIN frame: ${data.frameNumber} - side: ${data.side}`,
+      )
       return toReturn
     }
     if (type === 'players') {
       const framePlayer = await GetPlayer(data.playerId)
       const framePlayerNickname = framePlayer ? framePlayer.nickname : 'player'
-      toReturn.msg.push(`${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`)
+      toReturn.msg.push(
+        `${playerNickname} set ${framePlayerNickname} frame: ${data.frameNumber}`,
+      )
       return toReturn
     }
     if (type === 'firstbreak') {
@@ -3942,13 +4297,13 @@ async function Unfinalize(matchId) {
 async function UnfinalizeSide(matchId, side = '') {
   const lockKey = 'matchinfo_' + matchId
   if (side === 'home') {
-    const toSave={
+    const toSave = {
       finalize_home: {},
     }
     await UpdateMatch(toSave, lockKey)
   }
   if (side === 'away') {
-    const toSave={
+    const toSave = {
       finalize_away: {},
     }
     await UpdateMatch(toSave, lockKey)
@@ -3990,7 +4345,7 @@ async function SaveMatchUpdateHistory(data) {
     let toSave = {}
     await lock.acquire(lockKey, async () => {
       const cacheKey = 'matchinfo_' + matchId
-      const cachedRawMatchInfo =  await CacheGet(cacheKey)
+      const cachedRawMatchInfo = await CacheGet(cacheKey)
       let matchInfo = {}
       if (cachedRawMatchInfo) {
         matchInfo = JSON.parse(cachedRawMatchInfo)
@@ -3999,12 +4354,12 @@ async function SaveMatchUpdateHistory(data) {
         matchInfo.history = []
       }
       if (typeof data.data.jwt !== 'undefined') {
-        delete(data.data.jwt)
+        delete data.data.jwt
       }
       toSave = {
         playerId: data.playerId,
         timestamp: Date.now(),
-        data: data
+        data: data,
       }
       matchInfo.history.push(toSave)
       await CacheSet(cacheKey, JSON.stringify(matchInfo))
@@ -4112,12 +4467,14 @@ async function UpdateFrame(data, lockKey) {
       const rawCachedFrameInfo = await CacheGet(key)
       // if we get something back from redis...
       if (typeof rawCachedFrameInfo !== 'undefined' && rawCachedFrameInfo) {
-
         //  ... then parse it
         const cachedFrameInfo = JSON.parse(rawCachedFrameInfo)
 
         // check if the parsed object has a property called frames and that it is an array
-        if (typeof cachedFrameInfo.frames === 'undefined' || !Array.isArray(cachedFrameInfo.frames)) {
+        if (
+          typeof cachedFrameInfo.frames === 'undefined' ||
+          !Array.isArray(cachedFrameInfo.frames)
+        ) {
           cachedFrameInfo.frames = []
         }
 
@@ -4134,13 +4491,11 @@ async function UpdateFrame(data, lockKey) {
 
         // handle win situation
         if (data.type === 'win') {
-
           // if updateable...
           if (found) {
             cachedFrameInfo.frames[i].winner = data.winnerTeamId
             cachedFrameInfo.frames[i].winningPlayers = data.playerIds
           } else {
-
             // otherwise, add the frame data
             // note: this _shouldn't_ happen if front end enforces
             // players to be filled out before a "win" can be marked
@@ -4157,9 +4512,11 @@ async function UpdateFrame(data, lockKey) {
         } else if (data.type === 'players') {
           if (found) {
             if (data.side === 'home') {
-              cachedFrameInfo.frames[i].homePlayerIds[data.playerIdx] = data.playerId
+              cachedFrameInfo.frames[i].homePlayerIds[data.playerIdx] =
+                data.playerId
             } else {
-              cachedFrameInfo.frames[i].awayPlayerIds[data.playerIdx] = data.playerId
+              cachedFrameInfo.frames[i].awayPlayerIds[data.playerIdx] =
+                data.playerId
             }
           } else {
             const newFrame = {
@@ -4187,7 +4544,7 @@ async function UpdateFrame(data, lockKey) {
         // completely new match, not in redis yet
         const frameInfo = {
           matchId: data.matchId,
-          frames: []
+          frames: [],
         }
         // this should never happen
         // since the frame should already exist
@@ -4198,7 +4555,7 @@ async function UpdateFrame(data, lockKey) {
           frameInfo.frames.push({
             frameIdx: data.frameIdx,
             winner: data.winnerTeamId,
-            winningPlayers: data.playerIds, 
+            winningPlayers: data.playerIds,
             homePlayerIds: [],
             awayPlayerIds: [],
             frameType: data.frameType,
@@ -4240,7 +4597,11 @@ async function FinalizeMatch(matchId) {
       const cachedFrames = JSON.parse(rawCachedFrames)
       const frames = cachedFrames.frames
 
-      if (typeof frames !== 'undefined' && Array.isArray(frames) && frames.length > 0) {
+      if (
+        typeof frames !== 'undefined' &&
+        Array.isArray(frames) &&
+        frames.length > 0
+      ) {
         const frameTypes = await GetFrameTypes()
 
         // transform for fast lookups
@@ -4248,7 +4609,6 @@ async function FinalizeMatch(matchId) {
         frameTypes.forEach(frameType => {
           transformedFrameTypes[frameType.short_name] = frameType
         })
-
 
         // another pull for fast lookups
         const teams = await GetTeamsByMatchId(matchId)
@@ -4261,7 +4621,7 @@ async function FinalizeMatch(matchId) {
               match_id: matchId,
               frame_number: frames[i].frameNumber - 1,
               frame_type_id: transformedFrameTypes[frames[i].frameType].id,
-              home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0
+              home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0,
             }
             const res = await SaveFrame(toSave)
             const frameId = res?.insertId ?? 1
@@ -4290,7 +4650,7 @@ async function FinalizeMatch(matchId) {
               j++
             }
             i++
-          } 
+          }
         } else {
           return false
         }
@@ -4305,7 +4665,7 @@ async function FinalizeMatch(matchId) {
       let home_frames = 0
       let away_frames = 0
       frames.forEach(frame => {
-//        console.log(frame, matchInfo.home_team_id)
+        //        console.log(frame, matchInfo.home_team_id)
         if (frame.type !== 'section') {
           if (frame.winner === homeTeamId) {
             home_frames++
@@ -4330,12 +4690,22 @@ async function FinalizeMatch(matchId) {
       const tie_points = r0.length === 1 ? r0[0].tie_points : 1
       const loss_points = r0.length === 1 ? r0[0].loss_points : 0
 
-      const home_points = home_frames > away_frames ? win_points : home_frames === away_frames ? tie_points : loss_points
-      const away_points = home_frames < away_frames ? win_points : home_frames === away_frames ? tie_points : loss_points
-      
+      const home_points =
+        home_frames > away_frames
+          ? win_points
+          : home_frames === away_frames
+            ? tie_points
+            : loss_points
+      const away_points =
+        home_frames < away_frames
+          ? win_points
+          : home_frames === away_frames
+            ? tie_points
+            : loss_points
+
       let comments = {
         notes: '',
-        history: ''
+        history: '',
       }
       if (typeof matchInfo.notes !== 'undefined' && matchInfo.notes) {
         comments.notes = matchInfo.notes
@@ -4344,8 +4714,12 @@ async function FinalizeMatch(matchId) {
         comments.history = matchInfo.history
       }
 
-      const startTime = DateTime.fromMillis(matchInfo.startTime).toLocaleString(DateTime.TIME_24_WITH_SECONDS)
-      const endTime = DateTime.now().toLocaleString(DateTime.TIME_24_WITH_SECONDS)
+      const startTime = DateTime.fromMillis(matchInfo.startTime).toLocaleString(
+        DateTime.TIME_24_WITH_SECONDS,
+      )
+      const endTime = DateTime.now().toLocaleString(
+        DateTime.TIME_24_WITH_SECONDS,
+      )
       const toSaveMatch = {
         first_break_home_team: first_break_home_team,
         status_id: 3,
@@ -4367,7 +4741,7 @@ async function FinalizeMatch(matchId) {
         matchInfo: matchInfo,
         frames: frames,
       }
-//      await InsertFinalizedMatch(matchId, finalizedMatchData)
+      //      await InsertFinalizedMatch(matchId, finalizedMatchData)
       return false
     }
   } catch (e) {
@@ -4377,22 +4751,22 @@ async function FinalizeMatch(matchId) {
 }
 
 async function CreateAndSaveSecretKey(player) {
-  const token = 'token:' + await GetRandomBytes()
+  const token = 'token:' + (await GetRandomBytes())
   const toSave = {
     playerId: player.id,
     secondaryId: player?.secondaryId ?? null,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   }
   await CacheSet(token, JSON.stringify(toSave))
   return token
 }
 
 async function CreateAndSaveAdminSecretKey(player) {
-  const token = 'admin_token:' + await GetRandomBytes()
+  const token = 'admin_token:' + (await GetRandomBytes())
   const toSave = {
     playerId: player.id,
     secondaryId: player?.secondaryId ?? null,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   }
   await CacheSet(token, JSON.stringify(toSave))
   return token
@@ -4518,10 +4892,9 @@ async function UpdateFinalizedMatch(matchId, toSave) {
     `
     const params = Object.keys(toSave).map(key => toSave[key])
     params.push(matchId)
-    
+
     const res = await DoQuery(query, params)
     return res
-    
   } catch (e) {
     console.log(e)
     throw new Error(e)
@@ -4616,7 +4989,9 @@ async function GetPlayer(playerId) {
             FROM players
             WHERE id=?
           `
-          const originalPlayerRes = await DoQuery(query, [playerRes[0].merged_with_id])
+          const originalPlayerRes = await DoQuery(query, [
+            playerRes[0].merged_with_id,
+          ])
           player = originalPlayerRes[0]
           player.secondaryId = playerRes[0].id
         } else {
@@ -4693,7 +5068,7 @@ async function GetTeamPlayersStatsInternal(teamId) {
           profile_picture: row.profile_picture,
           played: 0,
           won: 0,
-          points: 0
+          points: 0,
         }
       }
       stats[row.player_id].played++
@@ -4727,7 +5102,7 @@ async function GetTeamPlayersStatsInternal(teamId) {
           profile_picture: row.profile_picture,
           played: 0,
           won: 0,
-          points: 0
+          points: 0,
         }
       }
       stats[row.player_id].played++
@@ -4741,7 +5116,9 @@ async function GetTeamPlayersStatsInternal(teamId) {
       }
     })
 
-    const _stats = Object.keys(stats).map(playerId => stats[playerId]).sort((a, b) => b.points - a.points || b.frames - a.frames)
+    const _stats = Object.keys(stats)
+      .map(playerId => stats[playerId])
+      .sort((a, b) => b.points - a.points || b.frames - a.frames)
     return _stats
   } catch (e) {
     console.log(e)
@@ -4766,12 +5143,12 @@ async function GetMatchStats(matchId) {
           home_win: stat.home_win === 1 ? 1 : 0,
           homeTeam: {
             name: stat.home_team_name,
-            id: stat.home_team_id ,
+            id: stat.home_team_id,
           },
           awayTeam: {
             name: stat.away_team_name,
             id: stat.away_team_id,
-          }
+          },
         }
       }
       if (stat.home_team === 1) {
@@ -4833,7 +5210,7 @@ async function GetMatchPerformance(playerId) {
           singlesWon: 0,
           doublesPlayed: 0,
           doublesWon: 0,
-          date: stat.date
+          date: stat.date,
         }
       }
       if (stat.no_players === 2) {
@@ -4850,7 +5227,7 @@ async function GetMatchPerformance(playerId) {
       }
     })
     const stats = Object.keys(_stats).map(key => _stats[key])
-    stats.sort((a, b) => b.date > a.date ? 1 : -1)
+    stats.sort((a, b) => (b.date > a.date ? 1 : -1))
     return stats
   } catch (e) {
     console.log(e)
@@ -4899,8 +5276,18 @@ async function GetDoublesStats(playerId) {
       }
     })
     const stats = Object.keys(_stats).map(playerId => {
-      _stats[playerId].winp = _stats[playerId].played > 0 ? (_stats[playerId].won/_stats[playerId].played * 100.0).toFixed(2) : '-'
-      _stats[playerId].wgtd = _stats[playerId].played > 0 ? (_stats[playerId].won/_stats[playerId].played * 100.0).toFixed(2) : '-'
+      _stats[playerId].winp =
+        _stats[playerId].played > 0
+          ? ((_stats[playerId].won / _stats[playerId].played) * 100.0).toFixed(
+              2,
+            )
+          : '-'
+      _stats[playerId].wgtd =
+        _stats[playerId].played > 0
+          ? ((_stats[playerId].won / _stats[playerId].played) * 100.0).toFixed(
+              2,
+            )
+          : '-'
       return _stats[playerId]
     })
     return stats.sort((a, b) => b.played - a.played)
@@ -4960,55 +5347,55 @@ async function GetPlayerStats(playerId) {
 
     const _frames = await DoQuery(query, [playerId, currentSeason])
     const summary = {
-      "8 Ball Single": {
+      '8 Ball Single': {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "8 Ball Double": {
-        played: 0,
-        won: 0,
-        winp: 0,
-        wgtd: 0,
-      }, 
-      "9 Ball Single": {
+      '8 Ball Double': {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "9 Ball Double": {
+      '9 Ball Single': {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "8 Ball": {
+      '9 Ball Double': {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "9 Ball": {
+      '8 Ball': {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "Singles": {
+      '9 Ball': {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "Doubles": {
+      Singles: {
         played: 0,
         won: 0,
         winp: 0,
         wgtd: 0,
       },
-      "Total": {
+      Doubles: {
+        played: 0,
+        won: 0,
+        winp: 0,
+        wgtd: 0,
+      },
+      Total: {
         played: 0,
         won: 0,
         winp: 0,
@@ -5071,7 +5458,7 @@ async function GetPlayerStats(playerId) {
     })
     summary.Singles.played = eightBallSingleCount + nineBallSingleCount
     summary.Singles.won = eightBallSingleWins + nineBallSingleWins
-    summary.Doubles.played= eightBallDoubleCount + nineBallDoubleCount
+    summary.Doubles.played = eightBallDoubleCount + nineBallDoubleCount
     summary.Doubles.won = eightBallDoubleWins + nineBallDoubleWins
     summary['8 Ball'].played = eightBallSingleCount + eightBallDoubleCount
     summary['8 Ball'].won = eightBallSingleWins + eightBallDoubleWins
@@ -5079,16 +5466,26 @@ async function GetPlayerStats(playerId) {
     summary['9 Ball'].won = nineBallSingleWins + nineBallDoubleWins
 
     for (let key in summary) {
-      summary[key].winp = summary[key].played > 0 ? (summary[key].won / summary[key].played * 100.0).toFixed(2) : '-'
+      summary[key].winp =
+        summary[key].played > 0
+          ? ((summary[key].won / summary[key].played) * 100.0).toFixed(2)
+          : '-'
       if (key === '9 Ball') {
-        summary[key].wgtd = (nineBallSingleCount + nineBallDoubleCount) > 0 ? ((nineBallSingleWins + 0.5 * nineBallDoubleWins) / (nineBallSingleCount + 0.5 * nineBallDoubleCount) * 100.0).toFixed(2) : '-'
+        summary[key].wgtd =
+          nineBallSingleCount + nineBallDoubleCount > 0
+            ? (
+                ((nineBallSingleWins + 0.5 * nineBallDoubleWins) /
+                  (nineBallSingleCount + 0.5 * nineBallDoubleCount)) *
+                100.0
+              ).toFixed(2)
+            : '-'
       } else {
         summary[key].wgtd = summary[key].winp
       }
     }
 
     const ordered = summary
-/*
+    /*
     const ordered = Object.keys(summary).sort().reduce((obj, key) => {
       obj[key] = summary[key]
       return obj
@@ -5097,18 +5494,23 @@ async function GetPlayerStats(playerId) {
 
     const totalPlayed = ordered.Singles.played + ordered.Doubles.played
     const totalWon = ordered.Singles.won + ordered.Doubles.won
-    const weightedPlayed = ordered.Singles.played + 0.5 * ordered.Doubles.played
+    const weightedPlayed =
+      ordered.Singles.played + 0.5 * ordered.Doubles.played
     const weightedWon = ordered.Singles.won + 0.5 * ordered.Doubles.won
-    const totalWinp = totalPlayed > 0 ? (totalWon /totalPlayed * 100.00).toFixed(2) : '-'
-    const totalWgtd = totalPlayed > 0 ? (weightedWon / weightedPlayed * 100.0).toFixed(2) : '-'
+    const totalWinp =
+      totalPlayed > 0 ? ((totalWon / totalPlayed) * 100.0).toFixed(2) : '-'
+    const totalWgtd =
+      totalPlayed > 0
+        ? ((weightedWon / weightedPlayed) * 100.0).toFixed(2)
+        : '-'
     ordered.Total = {
       played: totalPlayed,
       won: totalWon,
       winp: totalWinp,
       wgtd: totalWgtd,
     }
-    return ordered 
-  } catch(e) {
+    return ordered
+  } catch (e) {
     console.log(e)
     return {}
   }
@@ -5128,7 +5530,7 @@ async function GetAllUniquePlayers() {
     let i = 0
     while (i < r0.length) {
       const flag = countries[r0[i].country_code]?.emoji ?? ''
-      r0[i] .flag = flag
+      r0[i].flag = flag
       i++
     }
     return r0
@@ -5137,7 +5539,6 @@ async function GetAllUniquePlayers() {
     throw new Error(e)
   }
 }
-
 
 /*
 async function GetAllUniquePlayers() {
@@ -5272,11 +5673,10 @@ async function GetAllPlayers(activeOnly = true) {
     `
     const _frames = await DoQuery(query, [])
 
-
     query = `SELECT * FROM teams`
     const _teams = await DoQuery(query, [])
     const teams = {}
-    _teams.forEach(team => teams[team.id] = team)
+    _teams.forEach(team => (teams[team.id] = team))
 
     const players = {}
     _frames.forEach(frame => {
@@ -5289,7 +5689,12 @@ async function GetAllPlayers(activeOnly = true) {
             th: frame.cn_th,
           },
           pic: frame.pic,
-          gender: frame.gender === 2 ? 'Male' : frame.gender === 1 ? 'Female' : 'Other',
+          gender:
+            frame.gender === 2
+              ? 'Male'
+              : frame.gender === 1
+                ? 'Female'
+                : 'Other',
           language: frame.lang,
           player_id: frame.p_id,
           firstname: frame.firstname,
@@ -5297,7 +5702,7 @@ async function GetAllPlayers(activeOnly = true) {
           name: frame.player_name,
           total: 0,
           teams: [],
-          seasons: {}
+          seasons: {},
         }
       }
       if (typeof players[frame.p_id].seasons[frame.season] === 'undefined') {
@@ -5309,7 +5714,10 @@ async function GetAllPlayers(activeOnly = true) {
           players[frame.p_id].teams.push(team.short_name)
         }
       }
-      if (typeof players[frame.p_id].seasons[frame.season][team.name] === 'undefined') {
+      if (
+        typeof players[frame.p_id].seasons[frame.season][team.name] ===
+        'undefined'
+      ) {
         players[frame.p_id].seasons[frame.season][team.name] = 0
       }
       players[frame.p_id].seasons[frame.season][team.name] += frame.cnt
@@ -5323,12 +5731,12 @@ async function GetAllPlayers(activeOnly = true) {
           toSend.push(players[key])
         }
       }
-      toSend.sort((a, b) => a.name > b.name ? 1 : -1)
+      toSend.sort((a, b) => (a.name > b.name ? 1 : -1))
       return toSend
     } else {
       const res = Object.keys(players).map(key => players[key])
-      res.sort((a, b) => a.name > b.name ? 1 : -1)
-  //    console.log(JSON.stringify(res, null, 2))
+      res.sort((a, b) => (a.name > b.name ? 1 : -1))
+      //    console.log(JSON.stringify(res, null, 2))
       return res
     }
   } catch (e) {
@@ -5405,7 +5813,7 @@ async function GetPlayersByTeamIdFlat(teamId, activeOnly = false) {
         ORDER BY nickname
       `
     }
-    let params=[teamId]
+    let params = [teamId]
     const res = await DoQuery(query, params)
     return res
   } catch (e) {
@@ -5460,7 +5868,8 @@ async function GetPostponedMatches() {
       AND m.date < ?
     `
     const date = new Date()
-    const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
+    const today =
+      date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     const r0 = await DoQuery(q0, [currentSeason, today])
     return r0
   } catch (e) {
@@ -5468,10 +5877,15 @@ async function GetPostponedMatches() {
   }
 }
 
-async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam = true) {
+async function GetUncompletedMatches(
+  userid = undefined,
+  newonly = true,
+  noTeam = true,
+) {
   try {
     const date = new Date()
-    const today = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
+    const today =
+      date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     let query = ''
     let params = []
 
@@ -5508,7 +5922,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
         params.push(today)
         params.push(currentSeason)
       } else {
-        fastify.log.info("on team, show postponed")
+        fastify.log.info('on team, show postponed')
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
           FROM (
@@ -5551,7 +5965,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
       */
 
       // get all upcoming matches for the league
-      fastify.log.info("NO team, show upcoming")
+      fastify.log.info('NO team, show upcoming')
       query = `
         SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
         FROM (
@@ -5609,7 +6023,7 @@ async function GetUncompletedMatches(userid = undefined, newonly = true, noTeam 
 }
 
 fastify.ready().then(() => {
-	fastify.swagger()
+  fastify.swagger()
   fastify.io.on('connection', socket => {
     fastify.log.info('connection')
 
@@ -5619,7 +6033,7 @@ fastify.ready().then(() => {
     socket.on('join', (room, cb) => {
       const res = socket.join(room)
       cb({
-        status: 'ok'
+        status: 'ok',
       })
       fastify.log.info('join: ' + room)
     })
@@ -5631,30 +6045,51 @@ fastify.ready().then(() => {
           if (typeof data.jwt !== 'undefined') {
             delete data.jwt
           }
-          if (typeof data !== 'undefined' && typeof data.type !== 'undefined' && data.type) {
+          if (
+            typeof data !== 'undefined' &&
+            typeof data.type !== 'undefined' &&
+            data.type
+          ) {
             if (typeof data.matchId !== 'undefined' && data.matchId) {
               await lock.acquire('matchinfo' + data.matchId, async () => {
                 const room = 'match_' + data.matchId
                 let recordHistory = true
 
                 if (data.type === 'win') {
-                  fastify.log.info(room + ' - frame_update_win: ' + JSON.stringify(data))
+                  fastify.log.info(
+                    room + ' - frame_update_win: ' + JSON.stringify(data),
+                  )
                   data.data.type = data.type
                   const res = await UpdateFrame(data.data, room) // use room as a key to lock
                   await Unfinalize(data.matchId)
-                  fastify.io.to(room).emit("frame_update", {type: 'win', frameIdx: data.data.frameIdx, winnerTeamId: data.data.winnerTeamId})
+                  fastify.io.to(room).emit('frame_update', {
+                    type: 'win',
+                    frameIdx: data.data.frameIdx,
+                    winnerTeamId: data.data.winnerTeamId,
+                  })
                 }
 
                 if (data.type === 'players') {
-                  fastify.log.info(room + ' - frame_update_players: ' + JSON.stringify(data))
+                  fastify.log.info(
+                    room + ' - frame_update_players: ' + JSON.stringify(data),
+                  )
                   data.data.type = data.type
                   await Unfinalize(data.matchId)
                   const res = await UpdateFrame(data.data, room)
-                  fastify.io.to(room).emit("frame_update", {type: 'players', frameIdx: data.data.frameIdx, playerIdx: data.data.playerIdx, side: data.data.side, playerId: data.data.playerId, newPlayer: data.data.newPlayer})
+                  fastify.io.to(room).emit('frame_update', {
+                    type: 'players',
+                    frameIdx: data.data.frameIdx,
+                    playerIdx: data.data.playerIdx,
+                    side: data.data.side,
+                    playerId: data.data.playerId,
+                    newPlayer: data.data.newPlayer,
+                  })
                 }
 
                 if (data.type === 'firstbreak') {
-                  fastify.log.info(room + ' - set firstbreak: ' + JSON.stringify(data))
+                  fastify.log.info(
+                    room + ' - set firstbreak: ' + JSON.stringify(data),
+                  )
                   const lockKey = 'matchinfo_' + data.matchId
                   await Unfinalize(data.matchId)
                   const res = await UpdateMatch(data.data, lockKey)
@@ -5662,7 +6097,9 @@ fastify.ready().then(() => {
                 }
 
                 if (data.type === 'finalize') {
-                  fastify.log.info(room + ' - finalize: ' + JSON.stringify(data))
+                  fastify.log.info(
+                    room + ' - finalize: ' + JSON.stringify(data),
+                  )
                   const lockKey = 'matchinfo_' + data.matchId
                   const finalizedData = {}
                   data.data.timestamp = data.timestamp
@@ -5677,24 +6114,31 @@ fastify.ready().then(() => {
                 }
 
                 if (data.type === 'unfinalize') {
-                  fastify.log.info(room + ' - UNfinalize: ' + JSON.stringify(data))
+                  fastify.log.info(
+                    room + ' - UNfinalize: ' + JSON.stringify(data),
+                  )
                   UnfinalizeSide(data.matchId, data.data.side)
                   fastify.io.to(room).emit('match_update', data)
                 }
 
                 if (data.type === 'newnote') {
-                  fastify.log.info(room + ' - newnote: ' + JSON.stringify(data))
+                  fastify.log.info(
+                    room + ' - newnote: ' + JSON.stringify(data),
+                  )
                   const lockKey = 'matchinfo_' + data.matchId
                   const res = await AddMatchNote(data, lockKey)
-                  if (typeof data.data !== 'undefined' && typeof data.data.note !== 'undefined') {
+                  if (
+                    typeof data.data !== 'undefined' &&
+                    typeof data.data.note !== 'undefined'
+                  ) {
                     data.note = data.data.note
                   } else {
                     data.note = ''
                   }
                   const formattedNote = await FormatNote(data)
                   formattedNote.type = 'newnote'
-                  fastify.io.to(room).emit("match_update2", formattedNote)
-                  fastify.io.to(room).emit("match_update", formattedNote)
+                  fastify.io.to(room).emit('match_update2', formattedNote)
+                  fastify.io.to(room).emit('match_update', formattedNote)
                   recordHistory = false
                 }
 
@@ -5713,9 +6157,11 @@ fastify.ready().then(() => {
       }
     })
 
-    socket.on('getmatchinfo', (data, cb)  => {
-      fastify.log.info('socket ' + socket.id + ' - getmatchinfo: ' + JSON.stringify(data))
-      ;(async () => {
+    socket.on('getmatchinfo', (data, cb) => {
+      fastify.log.info(
+        'socket ' + socket.id + ' - getmatchinfo: ' + JSON.stringify(data),
+      );
+      (async () => {
         try {
           const res = await GetMatchInfo(data.matchId)
           cb(res)
@@ -5726,7 +6172,7 @@ fastify.ready().then(() => {
     })
 
     socket.on('getframes', (data, cb) => {
-      ;(async () => {
+      (async () => {
         try {
           const res = await GetFrames(data.matchId)
           cb(res)

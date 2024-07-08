@@ -4034,7 +4034,6 @@ async function GetTeams(season = null, useCache = false) {
           ORDER BY teams.short_name
         `
         teams = await DoQuery(query, [])
-        console.log(teams)
       }
       let i = 0
       while (i < teams.length) {
@@ -6042,6 +6041,58 @@ async function GetPlayersByTeamIdFlat(teamId, activeOnly = false) {
   }
 }
 
+async function GetLogos(res) {
+  try {
+    let i = 0
+    while (i < res.length) {
+      if (typeof res?.[i]?.home_team_id !== 'undefined') {
+        const logo = await CacheGet('logo_' + res[i].home_team_id)
+        if (!logo) {
+          const q0 = `
+            SELECT logo
+            FROM teams, venues
+            WHERE teams.id=?
+            AND teams.venue_id=venues.id
+          `
+          const r0 = await DoQuery(q0, [res[i].home_team_id])
+          if (typeof r0?.[0]?.logo !== 'undefined') {
+            res[i].home_logo = r0[0].logo
+            await CacheSet('logo_' + res[i].home_team_id, r0[0].logo ?? '')
+          } else {
+            res[i].home_logo = ''
+          }
+        } else {
+          res[i].home_logo = logo
+        }
+      }
+      if (typeof res?.[i]?.away_team_id !== 'undefined') {
+        const logo = await CacheGet('logo_' + res[i].away_team_id)
+        if (!logo) {
+          const q0 = `
+            SELECT logo
+            FROM teams, venues
+            WHERE teams.id=?
+            AND teams.venue_id=venues.id
+          `
+          const r0 = await DoQuery(q0, [res[i].away_team_id])
+          if (typeof r0?.[0]?.logo !== 'undefined') {
+            res[i].away_logo = r0[0].logo
+            await CacheSet('logo_' + res[i].away_team_id, r0[0].logo ?? '')
+          } else {
+            res[i].away_logo = ''
+          }
+        } else {
+          res[i].away_logo = logo
+        }
+      }
+      i++
+    }
+    return res
+  } catch (e) {
+    console.log(e)
+  }
+}
+
 async function GetPlayerByEmail(email) {
   try {
     const query = `
@@ -6070,7 +6121,13 @@ async function GetMatchesBySeason(season) {
       ORDER BY matches.date
     `
     const res = await DoQuery(query, [season])
-    return res
+    let i = 0
+    while (i < res.length) {
+      delete res[i].comments
+      i++
+    }
+    const toSend = await GetLogos(res)
+    return toSend
   } catch (e) {
     throw new Error(e)
   }
@@ -6237,51 +6294,8 @@ async function GetUncompletedMatches(
       params.push(currentSeason)
     }
     const res = await DoQuery(query, params)
-    let i = 0
-    while (i < res.length) {
-      if (typeof res?.[i]?.home_team_id !== 'undefined') {
-        const logo = await CacheGet('logo_' + res[i].home_team_id)
-        if (!logo) {
-          const q0 = `
-            SELECT logo
-            FROM teams, venues
-            WHERE teams.id=?
-            AND teams.venue_id=venues.id
-          `
-          const r0 = await DoQuery(q0, [res[i].home_team_id])
-          if (typeof r0?.[0]?.logo !== 'undefined') {
-            res[i].home_logo = r0[0].logo
-            await CacheSet('logo_' + res[i].home_team_id, r0[0].logo ?? '')
-          } else {
-            res[i].home_logo = ''
-          }
-        } else {
-          res[i].home_logo = logo
-        }
-      }
-      if (typeof res?.[i]?.away_team_id !== 'undefined') {
-        const logo = await CacheGet('logo_' + res[i].away_team_id)
-        if (!logo) {
-          const q0 = `
-            SELECT logo
-            FROM teams, venues
-            WHERE teams.id=?
-            AND teams.venue_id=venues.id
-          `
-          const r0 = await DoQuery(q0, [res[i].away_team_id])
-          if (typeof r0?.[0]?.logo !== 'undefined') {
-            res[i].away_logo = r0[0].logo
-            await CacheSet('logo_' + res[i].away_team_id, r0[0].logo ?? '')
-          } else {
-            res[i].away_logo = ''
-          }
-        } else {
-          res[i].away_logo = logo
-        }
-      }
-      i++
-    }
-    return res
+    const toSend = await GetLogos(res)
+    return toSend
   } catch (e) {
     console.log(e)
     return []

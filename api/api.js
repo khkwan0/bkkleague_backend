@@ -2293,43 +2293,66 @@ fastify.get('/match/details/:matchId', async (req, reply) => {
   }
 })()
 
-fastify.get('/admin/refinalize/:matchId', async (req, reply) => {
+fastify.get('/finalize/match/:matchId', async (req, reply) => {
   try {
-    const matchId = req.params.matchId
-    const framesCacheKey = 'match_' + matchId
-    const rawCachedFrames = await CacheGet(framesCacheKey)
-    const matchInfoCacheKey = 'matchinfo_' + matchId
-    const rawMatchInfo = await CacheGet(matchInfoCacheKey)
-    if (rawCachedFrames && rawMatchInfo) {
-      if (typeof matchId !== 'undefined' && matchId) {
-        const q0 = `
-          SELECT id
-          FROM frames
-          WHERE match_id=?
-        `
-        const r0 = await DoQuery(q0, [matchId])
-
-        let cnt = 0
-        while (cnt < r0.length) {
-          const q1 = `
-            DELETE
-            FROM players_frames
-            WHERE frame_id=?
-          `
-          const r1 = await DoQuery(q1, [r0[cnt].id])
-          cnt++
-        }
-
-        const q1 = `
-          DELETE FROM frames
-          WHERE match_id=?
-        `
-        const r1 = await DoQuery(q1, [matchId])
+    if (req.user.user.isAdmin) {
+      const matchId = req.params.matchId
+      if (matchId) {
         await FinalizeMatch(matchId)
         reply.code(200).send({status: 'ok'})
       } else {
         reply.code(404).send()
       }
+    } else {
+      reply.code(403).send()
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: e.message})
+  }
+})
+
+fastify.get('/admin/refinalize/:matchId', async (req, reply) => {
+  try {
+    if (req.user.user.isAdmin) {
+      const matchId = req.params.matchId
+      const framesCacheKey = 'match_' + matchId
+      const rawCachedFrames = await CacheGet(framesCacheKey)
+      const matchInfoCacheKey = 'matchinfo_' + matchId
+      const rawMatchInfo = await CacheGet(matchInfoCacheKey)
+      if (rawCachedFrames && rawMatchInfo) {
+        if (typeof matchId !== 'undefined' && matchId) {
+          const q0 = `
+          SELECT id
+          FROM frames
+          WHERE match_id=?
+        `
+          const r0 = await DoQuery(q0, [matchId])
+
+          let cnt = 0
+          while (cnt < r0.length) {
+            const q1 = `
+            DELETE
+            FROM players_frames
+            WHERE frame_id=?
+          `
+            const r1 = await DoQuery(q1, [r0[cnt].id])
+            cnt++
+          }
+
+          const q1 = `
+          DELETE FROM frames
+          WHERE match_id=?
+        `
+          const r1 = await DoQuery(q1, [matchId])
+          await FinalizeMatch(matchId)
+          reply.code(200).send({status: 'ok'})
+        } else {
+          reply.code(404).send()
+        }
+      }
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
     }
   } catch (e) {
     console.log(e)
@@ -4812,6 +4835,7 @@ async function FinalizeMatch(matchId) {
     const framesCacheKey = 'match_' + matchId
     const rawCachedFrames = await CacheGet(framesCacheKey)
     const matchInfoCacheKey = 'matchinfo_' + matchId
+    const rawMatchInfo = await CacheGet(matchInfoCacheKey)
     if (rawCachedFrames && rawMatchInfo) {
       const cachedFrames = JSON.parse(rawCachedFrames)
       const frames = cachedFrames.frames

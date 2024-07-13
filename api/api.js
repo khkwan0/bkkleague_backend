@@ -1483,6 +1483,26 @@ fastify.register((fastify, options, done) => {
     },
   })
 
+  fastify.get('/league/season/:seasonId/division/player/stats', {
+    schema: {
+      summary: 'Player stats by division',
+      description: 'Player statistics by division',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const seasonId =
+          req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
+        console.log(seasonId)
+        const stats = await GetDivisionPlayerStats(seasonId)
+        reply.code(200).send({status: 'ok', data: stats})
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
   fastify.get('/league/standings/:seasonId', {
     schema: {
       summary: 'Team standings across the league',
@@ -4139,6 +4159,75 @@ async function GetLeaguePlayerStats(_seasonId = null, gamesRequired = 1) {
 }
 */
 
+async function GetDivisionPlayerStats(_seasonId, gamesRequired = 1) {
+  try {
+    const seasonId =
+      _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
+    const q0 = `
+      SELECT pf.home_team, f.home_win home_win, d.name as div_name, p.nickname, f.frame_number, p.id as player_id, ft.no_players
+      FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s, players p
+      WHERE pf.frame_id=f.id
+        AND pf.player_id=p.id
+        AND f.frame_type_id=ft.id
+        AND f.match_id=m.id
+        AND m.division_id=d.id
+        AND d.season_id=s.id
+        AND s.id=?
+    `
+    const r0 = await DoQuery(q0, [seasonId])
+    const temp = {}
+    let i = 0
+    while (i < r0.length) {
+      const playerId = r0[i].player_id
+      const divName = r0[i].div_name
+      if (typeof temp[divName] === 'undefined') {
+        temp[divName] = {}
+      }
+      if (typeof temp[divName][playerId] === 'undefined') {
+        temp[divName][playerId] = {
+          name: r0[i].nickname,
+          won: 0,
+          played: 0,
+          adjPlayed: 0,
+          rawPerf: 0.0,
+          rawPerfDisp: '0.00',
+          adjPerf: 0.0,
+          adjPerfDisp: '0.00',
+        }
+      }
+      temp[divName][playerId].played++
+      const no_players = r0[i].no_players
+      temp[divName][playerId].adjPlayed += no_players === 2 ? 0.5 : 1.0
+      if (r0[i].home_team === r0[i].home_win) {
+        temp[divName][playerId].won += no_players === 2 ? 0.5 : 1.0
+      }
+      i++
+    }
+    const temp2 = {}
+    Object.keys(temp).forEach(divisionName => {
+      temp2[divisionName] = []
+      Object.keys(temp[divisionName]).forEach(playerId => {
+        const _stat = temp[divisionName][playerId]
+        if (_stat.played >= gamesRequired) {
+          _stat.rawPerf =
+            _stat.played > 0 ? (_stat.won / _stat.adjPlayed) * 100.0 : 0.0
+          _stat.rawPerfDisp =
+            _stat.played > 0
+              ? ((_stat.won / _stat.adjPlayed) * 100.0).toFixed(2)
+              : '0.00'
+          _stat.adjPerf = _stat.rawPerf * ((_stat.played - 1) / _stat.played)
+          _stat.adjPerfDisp = _stat.adjPerf.toFixed(2)
+          temp2[divisionName].push(_stat)
+        }
+      })
+      temp2[divisionName].sort((a, b) => (a.adjPerf < b.adjPerf ? 1 : -1))
+    })
+    return temp2
+  } catch (e) {
+    console.log(e)
+  }
+}
+
 async function GetLeaguePlayerStats(
   _seasonId = null,
   gamesRequired = 1,
@@ -4150,7 +4239,6 @@ async function GetLeaguePlayerStats(
     const seasonId =
       _seasonId !== null ? _seasonId : (await GetCurrentSeason()).identifier
     const cacheKey = `player_stats_s${seasonId}_g${gamesRequired}_${singlesOnly ? 'singles' : doublesOnly ? 'doubles' : 'all'}`
-    console.log(cacheKey)
     let query = `
       SELECT f.home_win, pf.home_team, p.id player_id, p.nickname name, ft.no_players, p.merged_with_id
       FROM players_frames pf, frames f, frame_types ft, matches m, divisions d, seasons s, players p
@@ -4224,6 +4312,7 @@ async function GetLeaguePlayerStats(
       stat.rank = index + 1
       return stat
     })
+    await CacheSet(cacheKey, JSON.stringify(finalStats))
     return finalStats
   } catch (e) {
     console.log(e)

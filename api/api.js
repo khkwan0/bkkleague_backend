@@ -6257,7 +6257,6 @@ async function GetMatchesBySeason(season) {
 async function GetPostponedMatches() {
   try {
     const currentSeason = (await GetCurrentSeason()).identifier
-    console.log(currentSeason)
     const q0 = `
       SELECT m.*, home.name as home_team_name, away.name as away_team_name, d.game_type, d.name as division_name, vhome .logo as home_logo, vaway.logo as away_logo
       FROM matches m, divisions d, teams home, teams away, venues vhome, venues vaway
@@ -6269,6 +6268,7 @@ async function GetPostponedMatches() {
       AND home.venue_id=vhome.id
       AND away.venue_id=vaway.id
       AND m.date < ?
+      ORDER by m.date DESC
     `
     const date = new Date()
     const today =

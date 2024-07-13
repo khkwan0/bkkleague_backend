@@ -1493,7 +1493,6 @@ fastify.register((fastify, options, done) => {
       try {
         const seasonId =
           req.params.seasonId === 'null' ? null : parseInt(req.params.seasonId)
-        console.log(seasonId)
         const stats = await GetDivisionPlayerStats(seasonId)
         reply.code(200).send({status: 'ok', data: stats})
       } catch (e) {
@@ -4186,6 +4185,7 @@ async function GetDivisionPlayerStats(_seasonId, gamesRequired = 1) {
       if (typeof temp[divName][playerId] === 'undefined') {
         temp[divName][playerId] = {
           name: r0[i].nickname,
+          playerId: playerId,
           won: 0,
           played: 0,
           adjPlayed: 0,

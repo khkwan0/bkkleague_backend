@@ -4184,6 +4184,7 @@ async function GetDivisionPlayerStats(_seasonId, gamesRequired = 1) {
       }
       if (typeof temp[divName][playerId] === 'undefined') {
         temp[divName][playerId] = {
+          statId: i,
           name: r0[i].nickname,
           playerId: playerId,
           won: 0,

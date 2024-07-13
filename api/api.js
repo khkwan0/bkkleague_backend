@@ -1187,6 +1187,23 @@ fastify.register((fastify, options, done) => {
     },
   })
 
+  fastify.get('/matches/postponed', {
+    schema: {
+      summary: 'Postponed matches',
+      description: 'Uncompleted matches for this season',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const res = await GetPostponedMatches()
+        reply.code(200).send({status: 'ok', data: res})
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
   fastify.get('/matches/season/:seasonId', {
     schema: {
       summary: 'All matches for the season with full information (large).',
@@ -1692,16 +1709,6 @@ fastify.register((fastify, options, done) => {
   })
 
   done()
-})
-
-fastify.get('/matches/postponed', async (req, reply) => {
-  try {
-    const res = await GetPostponedMatches()
-    reply.code(200).send({status: 'ok', data: res})
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send()
-  }
 })
 
 fastify.get('/matches/completed/season/:season', async (req, reply) => {
@@ -6250,12 +6257,17 @@ async function GetMatchesBySeason(season) {
 async function GetPostponedMatches() {
   try {
     const currentSeason = (await GetCurrentSeason()).identifier
+    console.log(currentSeason)
     const q0 = `
-      SELECT m.*
-      FROM matches m, divisions d, teams
+      SELECT m.*, home.name as home_team_name, away.name as away_team_name, d.game_type, d.name as division_name, vhome .logo as home_logo, vaway.logo as away_logo
+      FROM matches m, divisions d, teams home, teams away, venues vhome, venues vaway
       WHERE m.division_id=d.id
       AND d.season_id=?
       AND m.status_id=1
+      AND m.home_team_id=home.id
+      AND m.away_team_id=away.id
+      AND home.venue_id=vhome.id
+      AND away.venue_id=vaway.id
       AND m.date < ?
     `
     const date = new Date()

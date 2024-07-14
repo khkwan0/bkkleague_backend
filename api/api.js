@@ -3254,6 +3254,25 @@ async function GetAndSaveImage(playerId, provider, userId, picUrl) {
   }
 }
 
+async function GetAllMatchInfo(matches = []) {
+  try {
+    const promises = matches.map(async match => {
+      const history = await GetMatchInfo(match.match_id)
+      if (history) {
+        match.inProgress = true
+      } else {
+        match.inProgress = false
+      }
+      return match
+    })
+    const res = await Promise.all(promises)
+    return res
+  } catch (e) {
+    console.log(e)
+    return matches
+  }
+}
+
 async function GetMatchInfo(matchId) {
   try {
     const key = 'matchinfo_' + matchId
@@ -6420,7 +6439,8 @@ async function GetUncompletedMatches(
       params.push(currentSeason)
     }
     const res = await DoQuery(query, params)
-    const toSend = await GetLogos(res)
+    const intermediate = await GetLogos(res)
+    const toSend = await GetAllMatchInfo(intermediate)
     return toSend
   } catch (e) {
     console.log(e)

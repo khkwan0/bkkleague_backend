@@ -63,7 +63,6 @@ function compare(a, b) {
 
   await fastify.register(require('@fastify/basic-auth'), {
     validate(username, password, req, reply, done) {
-      console.log(process.env.SWAGGER_USERNAME, username, password)
       const validUsername = process.env.SWAGGER_USERNAME
       const validPassword = process.env.SWAGGER_PASSWORD
       let result = true
@@ -385,7 +384,7 @@ async function CacheDel(key) {
   }
 }
 
-fastify.register(fastifyIO)
+fastify.register(fastifyIO, {cors: {origin: '*'}, allowEIO3: true})
 
 /*
 fastify.decorate("authenticate", async (req, reply) => {

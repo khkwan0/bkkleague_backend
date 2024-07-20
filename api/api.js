@@ -1053,7 +1053,7 @@ fastify.register((fastify, options, done) => {
     schema: {
       summary: 'Websocket description',
       description:
-        '<div>Websocket server/client is using socket.io.</div><div>"socket.io-client": "^4.7.2"</div><div>Join a live match/channel/room by socket.emit("join", "match_XXXX") // see socket.io client docs <a target="_blank" href="https://socket.io/docs/v4/client-api/#socketemiteventname-args">https://socket.io/docs/v4/client-api/#socketemiteventname-args</a></div><div>Your WS client should listen for "match_update" and "frame_update".</div><div><h3>frame_update</h3><ul><li>win: {type: "win", frameIdx: &lt;number&gt;, winnerTeamId: &lt;number&gt;}</li><li>players: {type: "players", frameIdx: &lt;number&gt;, playerIdx: 0|1, side: team_id(number), playerId: &lt;number&gt;, newPlayer: true|false}</li></ul><h3>match_update</h3><ul><li>firstbreak: {firstbreak: team_id (number)}</li></ul></div>',
+        '<div>Websocket server/client is using socket.io.</div><div>"socket.io-client": "^4.7.2"</div><div>Endpoint: https://api.bkkleague.com</div><div>Join a live match/channel/room by socket.emit("join", "match_XXXX") // see socket.io client docs <a target="_blank" href="https://socket.io/docs/v4/client-api/#socketemiteventname-args">https://socket.io/docs/v4/client-api/#socketemiteventname-args</a></div><div>Your WS client should listen for "match_update" and "frame_update".</div><div><h3>frame_update</h3><ul><li>win: {type: "win", frameIdx: &lt;number&gt;, winnerTeamId: &lt;number&gt;}</li><li>players: {type: "players", frameIdx: &lt;number&gt;, playerIdx: 0|1, side: team_id(number), playerId: &lt;number&gt;, newPlayer: true|false}</li></ul><h3>match_update</h3><ul><li>firstbreak: {firstbreak: team_id (number)}</li></ul></div>',
       tags: ['websocket'],
     },
     handler: async (req, reply) => {
@@ -1612,6 +1612,7 @@ fastify.register((fastify, options, done) => {
         if (matchId) {
           // this is what we will return
           const allFrameData = {
+            gameType: '',
             firstBreak: '',
             teams: {
               home: {},
@@ -1634,6 +1635,7 @@ fastify.register((fastify, options, done) => {
             }
             allFrameData.teams.home = teams[matchInfo.home_team_id].data
             allFrameData.teams.away = teams[matchInfo.away_team_id].data
+            allFrameData.gameType = matchInfo.game_type
 
             // let's determine first break
             const matchMetaRaw = await CacheGet('matchinfo_' + matchId)
@@ -3376,9 +3378,10 @@ async function GetMatchPlayers(matchId) {
 async function GetMatchFromDB(matchId = 0) {
   try {
     const q0 = `
-      SELECT *
-      FROM matches
-      WHERE id=?
+      SELECT m.*, d.game_type as game_type
+      FROM matches m, divisions d
+      WHERE m.id=?
+      AND m.division_id=d.id
     `
     const r0 = await DoQuery(q0, [matchId])
     return r0[0]

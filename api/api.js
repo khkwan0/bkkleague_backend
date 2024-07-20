@@ -1662,19 +1662,19 @@ fastify.register((fastify, options, done) => {
               if (typeof frames !== 'undefined' && Array.isArray(frames)) {
                 let i = 0
                 while (i < frames.length) {
-                  if (
-                    typeof frames[i].winner !== 'undefined' &&
-                    frames[i].winner
-                  ) {
+                  if (typeof frames[i].winner !== 'undefined') {
                     const winner = frames[i].winner
                     const data = {
                       frameNumber: frames[i].frameNumber,
-                      winner: {
-                        side: teams[winner].side,
-                        teamId: winner,
-                        name: teams[winner].data.name,
-                        shortName: teams[winner].data.short_name,
-                      },
+                      winner:
+                        frames[i].winner > 0
+                          ? {
+                              side: teams[winner].side,
+                              teamId: winner,
+                              name: teams[winner].data.name,
+                              shortName: teams[winner].data.short_name,
+                            }
+                          : null,
                       players: {
                         home: [],
                         away: [],
@@ -3271,6 +3271,58 @@ async function GetAllMatchInfo(matches = []) {
     return matches
   }
 }
+
+/*
+async function GetMatchData(matchId) {
+  try {
+    if (typeof matchId !== 'undefined' && matchId) {
+      // get team names and id's
+      const q0 = `
+        SELECT home_team.id as home_team_id, away_team_id as away_team_id, home_team.short_name as home_team_name, away_team.short_name as away_team_name
+        FROM matches m, teams home_team, teams away_team
+        WHERE m.id=?
+        AND m.home_team_id = home_team.id
+        AND m.away_team_id = away_team.id
+      `
+      const r0 = await DoQuery(q0, [matchId])
+
+      if (r0.length > 0) {
+        const home_team_id = r0[0].home_team_id
+        const away_team_id = r0[0].away_team_id
+        const home_team_name = r0[0].home_team_name
+        const away_team_name = r0[0].away_team_name
+
+        // get home team players
+        const q1 = `
+          SELECT p.id as player_id, p.nickname as player_name
+          FROM players_teams pt, players p
+          WHERE pt.team_id=?
+          AND pt.team_id=p.player_id
+        `
+        const home_players_raw = await DoQuery(q1, [home_team_id])
+        const away_players_raw = await DoQuery(q1, [away_team_id])
+        const home_players = {}
+        const away_players = {}
+
+        // transform arrays to dictionary for fast lookups
+        home_players_raw.forEach(player => {
+          home_players[player.player_id] = player
+        })
+        away_players_raw.forEach(player => {
+          away_players[player.player_id] = player
+        })
+
+        const frames = await GetFrames(matchId)
+      } else {
+        return null
+      }
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+*/
 
 async function GetMatchInfo(matchId) {
   try {
@@ -6457,9 +6509,11 @@ fastify.ready().then(() => {
     })
     socket.on('join', (room, cb) => {
       const res = socket.join(room)
-      cb({
-        status: 'ok',
-      })
+      if (typeof cb !== 'undefined' && cb) {
+        cb({
+          status: 'ok',
+        })
+      }
       fastify.log.info('join: ' + room)
     })
 

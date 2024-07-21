@@ -1682,12 +1682,22 @@ fastify.register((fastify, options, done) => {
                         away: [],
                       },
                     }
-                    frames[i].homePlayerIds.forEach(playerId => {
+                    for (let j = 0; j < frames[i].homePlayerIds.length; j++) {
+                      const playerId = frames[i].homePlayerIds[j]
+                      if (typeof homePlayers[playerId] === 'undefined') {
+                        homePlayers[playerId] =
+                          await GetPlayerByIdAbbrev(playerId)
+                      }
                       data.players.home.push(homePlayers[playerId])
-                    })
-                    frames[i].awayPlayerIds.forEach(playerId => {
+                    }
+                    for (let j = 0; j < frames[i].awayPlayerIds.length; j++) {
+                      const playerId = frames[i].awayPlayerIds[j]
+                      if (typeof awayPlayers[playerId] === 'undefined') {
+                        awayPlayers[playerId] =
+                          await GetPlayerByIdAbbrev(playerId)
+                      }
                       data.players.away.push(awayPlayers[playerId])
-                    })
+                    }
 
                     allFrameData.frameData.push(data)
                   }
@@ -6192,6 +6202,26 @@ async function GetPlayersTeamPlayers(activeOnly = true) {
   } catch (e) {
     console.log(e)
     throw new Error(e)
+  }
+}
+
+async function GetPlayerByIdAbbrev(playerId) {
+  try {
+    const q0 = `
+      SELECT
+        p.id as playerId,
+        p.nickname as nickname,
+        p.firstName as firstName,
+        p.lastName as lastName,
+        p.profile_picture as avatar
+      FROM players p
+      WHERE p.id=?
+    `
+    const r0 = await DoQuery(q0, [playerId])
+    return r0[0]
+  } catch (e) {
+    console.log(e)
+    return null
   }
 }
 

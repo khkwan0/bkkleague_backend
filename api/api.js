@@ -437,6 +437,7 @@ fastify.post('/login', async (req, reply) => {
     if (res) {
       const token = await CreateAndSaveSecretKey(res)
       const jwt = fastify.jwt.sign({token: token})
+      console.log(jwt)
       return {
         status: 'ok',
         data: {
@@ -2014,6 +2015,9 @@ fastify.post('/user/token', async (req, reply) => {
           tokens = JSON.parse(r0[0].fcm_tokens)
         } catch (e) {
           fastify.log.info('No tokens')
+        }
+        if (!tokens) {
+          tokens = []
         }
         if (!tokens.includes(token)) {
           tokens.push(token)
@@ -4156,7 +4160,7 @@ async function GetTeams(season = null, useCache = false) {
           WHERE division_id IN (
             SELECT id AS division_id
             FROM divisions WHERE season_id=(
-              SELECT id
+              SELECT identifier
               FROM seasons
               WHERE status_id=1
             )
@@ -5174,6 +5178,7 @@ async function FinalizeMatch(matchId) {
 }
 
 async function CreateAndSaveSecretKey(player) {
+  console.log(player)
   const token = 'token:' + (await GetRandomBytes())
   const toSave = {
     playerId: player.id,

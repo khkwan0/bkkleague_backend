@@ -6399,6 +6399,7 @@ async function GetUncompletedMatches(
       date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate()
     let query = ''
     let params = []
+    let cacheKey = ''
 
     // user is logged in
     if (typeof userid !== 'undefined' && userid && noTeam === 'false') {
@@ -6432,6 +6433,7 @@ async function GetUncompletedMatches(
         const currentSeason = (await GetCurrentSeason()).identifier
         params.push(today)
         params.push(currentSeason)
+        cacheKey = `uncompleted_user${parseInt(userid)}_date${today}_season${currentSeason}`
       } else {
         fastify.log.info('on team, show postponed')
         query = `
@@ -6498,6 +6500,7 @@ async function GetUncompletedMatches(
         ORDER BY y.date
       `
       params.push(today)
+      cacheKey = `uncompleted_date${today}`
       /*
       const res = await DoQuery(query, params)
       return res
@@ -6527,10 +6530,24 @@ async function GetUncompletedMatches(
       const currentSeason = (await GetCurrentSeason()).identifier
       params.push(currentSeason)
     }
-    const res = await DoQuery(query, params)
-    const intermediate = await GetLogos(res)
-    const toSend = await GetAllMatchInfo(intermediate)
-    return toSend
+    if (cacheKey) {
+      const cacheRes = await CacheGet(cacheKey)
+      if (cacheRes) {
+        fastify.log.info("Cache hit: " + cacheKey)
+        return JSON.parse(cacheRes)
+      } else {
+        const res = await DoQuery(query, params)
+        const intermediate = await GetLogos(res)
+        const toSend = await GetAllMatchInfo(intermediate)
+        await CacheSet(cacheKey, JSON.stringify(toSend), 7200)
+        return toSend
+      }
+    } else {
+      const res = await DoQuery(query, params)
+      const intermediate = await GetLogos(res)
+      const toSend = await GetAllMatchInfo(intermediate)
+      return toSend
+    }
   } catch (e) {
     console.log(e)
     return []

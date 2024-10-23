@@ -3154,6 +3154,8 @@ async function GetMatchDetails(matchId) {
       FROM
         matches m, frames f
       WHERE
+        f.duplicate = 0
+        AND
         m.id=?
         AND
         f.match_id=m.id
@@ -5557,6 +5559,7 @@ async function GetTeamPlayersStatsInternal(teamId) {
 async function GetMatchStats(matchId) {
   try {
     const rawStats = await GetMatchStatsRaw(matchId)
+    console.log(rawStats.length)
     const _stats = {}
     let awayScore = 0
     let homeScore = 0
@@ -5611,6 +5614,7 @@ async function GetMatchStatsRaw(matchId) {
             AND f.id=pf.frame_id
             AND pf.player_id=p.id
             AND f.match_id=m.id
+            AND f.duplicate=0
         ORDER BY f.id) as x
       LEFT OUTER JOIN teams hteam
         ON hteam.id=x.home_team_id
@@ -6533,7 +6537,7 @@ async function GetUncompletedMatches(
     if (cacheKey) {
       const cacheRes = await CacheGet(cacheKey)
       if (cacheRes) {
-        fastify.log.info("Cache hit: " + cacheKey)
+        fastify.log.info('Cache hit: ' + cacheKey)
         return JSON.parse(cacheRes)
       } else {
         const res = await DoQuery(query, params)

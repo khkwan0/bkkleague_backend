@@ -1,9 +1,8 @@
-import excelToJson from 'convert-excel-to-json'
-import * as dotenv from 'dotenv'
-import * as mysql from 'mysql2'
-import {DateTime} from 'luxon'
+const excelToJson = require('convert-excel-to-json')
+const mysql = require('mysql2')
+const {DateTime} = require('luxon')
 
-dotenv.config()
+require('dotenv').config()
 
 const mysqlHandle = mysql.createPool({
   host: process.env.MYSQL_HOST,
@@ -32,10 +31,13 @@ async function main() {
   let i = 0
   let rounds = {}
   while (i < fixtures.length) {
-    let div = 67
-    switch (fixtures[i].A) {
-      case '9B A': div = 64; break
-      case '9B B': div = 65; break
+    let div =70 
+    switch (fixtures[i].B) {
+      case '8B B': div = 71; break
+      case '8B C': div = 72; break
+      case '9B A': div = 73; break
+      case '9B B': div = 74; break
+      case '9B C': div = 75; break
       default: break
     }
 
@@ -47,10 +49,12 @@ async function main() {
 
     let date = null
     try {
-      date = DateTime.fromFormat(fixtures[i].B, "MM/dd/yyyy").plus({'days': 1}).toFormat("yyyy-MM-dd")
+      date = DateTime.fromFormat(fixtures[i].C, "M-d-yy").toFormat("yyyy-MM-dd")
+      // date = DateTime.fromFormat(fixtures[i].C, "M-d-yy").plus({'days': 1}).toFormat("yyyy-MM-dd")
       // date = DateTime.fromFormat(fixtures[i].B, "dd/MM/yyyy").toFormat("yyyy/MM/dd")
     } catch (e) {
-      date = DateTime.fromJSDate(fixtures[i].B).plus({'days': 1}).toFormat("yyyy-MM-dd")
+      // date = DateTime.fromJSDate(fixtures[i].C).plus({'days': 1}).toFormat("yyyy-MM-dd")
+      date = DateTime.fromJSDate(fixtures[i].C).toFormat("yyyy-MM-dd")
     }
     let j = 0
     let home_team_id = 0

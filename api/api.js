@@ -5040,9 +5040,10 @@ async function FinalizeMatch(matchId) {
       const isFriendly = matchInfo?.isFriendly ?? false
 
       // don't record stats for friendly matches
+      let frames = []
       if (!isFriendly) {
         const cachedFrames = JSON.parse(rawCachedFrames)
-        const frames = cachedFrames.frames
+        frames = cachedFrames.frames
 
         if (
           typeof frames !== 'undefined' &&

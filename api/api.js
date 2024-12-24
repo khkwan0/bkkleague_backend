@@ -4506,6 +4506,7 @@ async function GetStandings(_seasonId = null) {
     const cacheKey = 'league_standings_season' + seasonId
     const cachedStandings = await CacheGet(cacheKey)
     if (cachedStandings) {
+      fastify.log.info('Cache hit - ' + cacheKey)
       return JSON.parse(cachedStandings)
     } else {
       let query = `
@@ -4518,6 +4519,7 @@ async function GetStandings(_seasonId = null) {
               AND s.id=?
             ) as x, matches m, teams ta, teams th
         WHERE (m.home_team_id=x.id OR m.away_team_id=x.id)
+          AND m.is_friendly = 0
           AND m.status_id > 0
           AND m.away_team_id=ta.id
           AND m.home_team_id=th.id
@@ -5061,43 +5063,43 @@ async function FinalizeMatch(matchId) {
 
         if (teams && typeof teams[0] !== 'undefined') {
           if (!isFriendly) {
-          // save each frame in frames table
-          let i = 0
-          while (i < frames.length) {
-            const toSave = {
-              match_id: matchId,
-              frame_number: frames[i].frameNumber - 1,
-              frame_type_id: transformedFrameTypes[frames[i].frameType].id,
-              home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0,
-            }
-            const res = await SaveFrame(toSave)
-            const frameId = res?.insertId ?? 1
-
-            // save all players in home team in players_frames table
-            let j = 0
-            while (j < frames[i].homePlayerIds.length) {
-              const toSavePlayersFrames = {
-                frame_id: frameId,
-                player_id: frames[i].homePlayerIds[j],
-                home: 1,
+            // save each frame in frames table
+            let i = 0
+            while (i < frames.length) {
+              const toSave = {
+                match_id: matchId,
+                frame_number: frames[i].frameNumber - 1,
+                frame_type_id: transformedFrameTypes[frames[i].frameType].id,
+                home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0,
               }
-              await SavePlayersFrames(toSavePlayersFrames)
-              j++
-            }
+              const res = await SaveFrame(toSave)
+              const frameId = res?.insertId ?? 1
 
-            // do the same for away team
-            j = 0
-            while (j < frames[i].awayPlayerIds.length) {
-              const toSavePlayersFrames = {
-                frame_id: frameId,
-                player_id: frames[i].awayPlayerIds[j],
-                home: 0,
+              // save all players in home team in players_frames table
+              let j = 0
+              while (j < frames[i].homePlayerIds.length) {
+                const toSavePlayersFrames = {
+                  frame_id: frameId,
+                  player_id: frames[i].homePlayerIds[j],
+                  home: 1,
+                }
+                await SavePlayersFrames(toSavePlayersFrames)
+                j++
               }
-              await SavePlayersFrames(toSavePlayersFrames)
-              j++
+
+              // do the same for away team
+              j = 0
+              while (j < frames[i].awayPlayerIds.length) {
+                const toSavePlayersFrames = {
+                  frame_id: frameId,
+                  player_id: frames[i].awayPlayerIds[j],
+                  home: 0,
+                }
+                await SavePlayersFrames(toSavePlayersFrames)
+                j++
+              }
+              i++
             }
-            i++
-          }
           }
         } else {
           return false
@@ -5109,7 +5111,6 @@ async function FinalizeMatch(matchId) {
       // finally save in matches table...
       const homeTeamId = matchInfo.finalize_home?.teamId ?? 0
       const first_break_home_team = matchInfo.firstBreak === homeTeamId ? 1 : 0
-      console.log(frames)
       let home_frames = 0
       let away_frames = 0
       frames.forEach(frame => {

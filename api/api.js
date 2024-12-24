@@ -4426,6 +4426,7 @@ async function GetTeamStats(_seasonId = null, gameType = '8b') {
         SELECT m.home_team_id, m.away_team_id, m.date, m.home_frames, m.away_frames, m.home_points, m.away_points, m.score, m.id match_id
         FROM matches m, divisions d, seasons s
         WHERE m.division_id=d.id
+          AND m.is_friendly=0
           AND m.status_id=3
           AND d.game_type=?
           AND d.season_id=s.id

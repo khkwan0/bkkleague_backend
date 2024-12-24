@@ -5059,7 +5059,8 @@ async function FinalizeMatch(matchId) {
         // another pull for fast lookups
         const teams = await GetTeamsByMatchId(matchId)
 
-        if (teams && typeof teams[0] !== 'undefined' && !isFriendly) {
+        if (teams && typeof teams[0] !== 'undefined') {
+          if (!isFriendly) {
           // save each frame in frames table
           let i = 0
           while (i < frames.length) {
@@ -5097,6 +5098,7 @@ async function FinalizeMatch(matchId) {
             }
             i++
           }
+          }
         } else {
           return false
         }
@@ -5107,20 +5109,19 @@ async function FinalizeMatch(matchId) {
       // finally save in matches table...
       const homeTeamId = matchInfo.finalize_home?.teamId ?? 0
       const first_break_home_team = matchInfo.firstBreak === homeTeamId ? 1 : 0
+      console.log(frames)
       let home_frames = 0
       let away_frames = 0
-      if (!isFriendly) {
-        frames.forEach(frame => {
-          //        console.log(frame, matchInfo.home_team_id)
-          if (frame.type !== 'section') {
-            if (frame.winner === homeTeamId) {
-              home_frames++
-            } else {
-              away_frames++
-            }
+      frames.forEach(frame => {
+        //        console.log(frame, matchInfo.home_team_id)
+        if (frame.type !== 'section') {
+          if (frame.winner === homeTeamId) {
+            home_frames++
+          } else {
+            away_frames++
           }
-        })
-      }
+        }
+      })
 
       // calculate points
 

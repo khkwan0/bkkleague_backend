@@ -5198,12 +5198,13 @@ async function FinalizeMatch(matchId) {
       const currentSeason = (await GetCurrentSeason()).identifier
       const cacheKey = 'league_standings_season' + currentSeason
       await CacheDel(cacheKey)
-
+      /*
       const finalizedMatchData = {
         matchInfo: matchInfo,
         frames: frames,
       }
-      //      await InsertFinalizedMatch(matchId, finalizedMatchData)
+      await InsertFinalizedMatch(matchId, finalizedMatchData)
+      */
       return false
     }
   } catch (e) {

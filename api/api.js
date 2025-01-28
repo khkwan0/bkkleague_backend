@@ -1170,6 +1170,24 @@ fastify.register((fastify, options, done) => {
     },
   })
 
+  fastify.get('/match/meta/:matchId', {
+    schema: {
+      summary: 'Get match metadata by match Id: Date, Type, Team Names, Venue.',
+      description: 'Get match meta data by Id',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const res = await GetMatchMetaInfo(req.params.matchId)
+        console.log(res)
+        return {status: 'ok', data: res}
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'err', msg: 'Server error'})
+      }
+    },
+  })
+
   fastify.get('/frames/:matchId', {
     schema: {
       summary: 'Get frames info, live scored for unfinalized matches.',
@@ -1841,6 +1859,7 @@ fastify.post('/matches/completed', async (req, reply) => {
       results = results.concat(r0)
       i++
     }
+    results.sort((a, b) => (a.date > b.date ? 1 : -1))
     reply.code(200).send({status: 'ok', data: results})
   } catch (e) {
     console.log(e)
@@ -3381,6 +3400,47 @@ async function GetMatchData(matchId) {
 }
 */
 
+async function GetMatchMetaInfo(matchId) {
+  try {
+    const q0 = `
+      SELECT m.date, m.home_team_id, m.away_team_id, m.score, m.id, t.name as home_name, t2.name as away_name
+      FROM
+       matches m, teams t, teams t2
+      WHERE
+        m.id=? AND
+        m.home_team_id=t.id AND
+        m.away_team_id=t2.id
+    `
+    const r0 = await DoQuery(q0, [matchId])
+    const score = JSON.parse(r0[0].score).frames
+    const home_team_id = r0[0].home_team_id
+    const away_team_id = r0[0].away_team_id
+    let i = 0
+    let home_frames = 0
+    let away_frames = 0
+    while (i < score.length) {
+      if (score[i].winner === home_team_id) {
+        home_frames++
+      } else {
+        away_frames++
+      }
+      i++
+    }
+    return {
+      matchDate: r0[0].date,
+      home_team_id: r0[0].home_team_id,
+      away_team_id: r0[0].away_team_id,
+      home_frames: home_frames,
+      away_frames: away_frames,
+      home_team_name: r0[0].home_name,
+      away_team_name: r0[0].away_name,
+    }
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
 async function GetMatchInfo(matchId) {
   try {
     const key = 'matchinfo_' + matchId
@@ -3790,8 +3850,7 @@ async function GetPlayerStatsInfo(playerId) {
       _frames.forEach(frame => {
         if (typeof player.player_id === 'undefined') {
           player.lastSeason = frame.s_id
-          player.flag =
-            r0.length > 0 ? countries[r0[0].nationality]?.emoji : ''
+          player.flag = r0.length > 0 ? countries[r0[0].country]?.emoji : ''
           if (r0.length > 0) {
             player.nationality = {
               en: r0[0].cn_en,
@@ -3818,6 +3877,7 @@ async function GetPlayerStatsInfo(playerId) {
           player.total = 0
           player.teams = []
           player.seasons = {}
+          console.log(player)
         }
         if (typeof player.seasons[frame.season] === 'undefined') {
           player.seasons[frame.season] = {}

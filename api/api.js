@@ -934,6 +934,7 @@ fastify.get('/user', async (req, reply) => {
     const userid = await GetPlayerIdFromToken(req.user.token)
     if (userid) {
       const userData = await GetPlayer(userid)
+      console.log(userData.nationality)
       return userData
     } else {
       fastify.log.error('No user id found from jwt')
@@ -958,7 +959,8 @@ fastify.get('/rules', async (req, reply) => {
 fastify.get('/season', async (req, reply) => {
   try {
     const res = await GetActiveSeason()
-    reply.code(200).send({season: res[0].identifier})
+    console.log(res)
+    reply.code(200).send({season: res[0].identifier, id: res[0].identifier})
   } catch (e) {
     reply.code(500).send()
   }
@@ -1070,6 +1072,7 @@ fastify.register((fastify, options, done) => {
     handler: async (req, reply) => {
       try {
         const res = await GetActiveSeason()
+        console.log(res)
         reply.code(200).send(res)
       } catch (e) {
         reply.code(500).send()
@@ -1148,6 +1151,42 @@ fastify.register((fastify, options, done) => {
       } catch (e) {
         console.log(e)
         return []
+      }
+    },
+  })
+
+  fastify.post('/match/confirm/:matchId', {
+    schema: {
+      summary: 'Submit match confirmation',
+      description:
+        'Submit match confirmation.  Validates user and user role before saving',
+      tags: ['Matches'],
+      body: {
+        type: 'object',
+        properties: {
+          teamId: { type: 'number' },
+        },
+      },
+    },
+    handler: async (req, reply) => {
+      try {
+        const userId = req.user.user.id
+        const matchId = req.params.matchId
+        const teamId = req.body.teamId
+
+        if (await isOnTeamAndIsLeader(userId, teamId)) {
+          const res = await ConfirmMatch(userId, matchId, teamId)
+          if (res) {
+            reply.code(200).send({status: 'ok'})
+          } else {
+            reply.code(400).send({status: 'error', error: 'match_not_confirmed'})
+          }
+        } else {
+          reply.code(403).send({status: 'error', error: 'unauthorized'})
+        }
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'err', msg: 'Server error'})
       }
     },
   })
@@ -3198,6 +3237,48 @@ async function AddNewUser(email, password, nickname, firstName, lastName) {
     console.log(e)
     mysqlHandle.query('ROLLBACK')
     throw new Error(e)
+  }
+}
+
+async function isOnTeam(userId, teamId) {
+  const query0 = `
+    SELECT * FROM players_teams WHERE player_id=? AND team_id=?
+  `
+  const res = await DoQuery(query0, [userId, teamId])
+  return res.length > 0
+}
+
+async function isOnTeamAndIsLeader(userId, teamId) {
+  const query0 = `
+    SELECT * FROM players_teams WHERE player_id=? AND team_id=? AND team_role_id > 0
+  `
+  const res = await DoQuery(query0, [userId, teamId])
+  return res.length > 0
+}
+
+async function ConfirmMatch(userId, matchId, teamId) {
+  try {
+    // is it home or away?
+    const query0 = `
+      SELECT * FROM matches WHERE id=?
+    `
+    const res0 = await DoQuery(query0, [matchId])
+    const isHome = res0[0].home_team_id === teamId
+    if (isHome) {
+      const query1 = `
+        UPDATE matches SET home_confirmed=? WHERE id=?
+      `
+      const res1 = await DoQuery(query1, [userId, matchId])
+    } else {
+      const query1 = `
+        UPDATE matches SET away_confirmed=? WHERE id=?
+      `
+      const res1 = await DoQuery(query1, [userId, matchId])
+    }
+    return true
+  } catch (e) {
+    console.log(e)
+    throw e
   }
 }
 
@@ -5583,6 +5664,16 @@ async function GetPlayer(playerId) {
         if (typeof res[0] !== 'undefined') {
           player.teams = res
         }
+
+        query = `
+          SELECT *
+          FROM countries
+          WHERE id=?
+        `
+        const countryRes = await DoQuery(query, [player.nationality_id])
+        if (typeof countryRes[0] !== 'undefined') {
+          player.nationality = countryRes[0]
+        }
       }
       return player
     } else {
@@ -6548,7 +6639,7 @@ async function GetUncompletedMatches(
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, pt.team_role_id, pt.team_id AS player_team_id
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.date>=?
@@ -6572,13 +6663,13 @@ async function GetUncompletedMatches(
         params.push(currentSeason)
         cacheKey = `uncompleted_user${parseInt(userid)}_date${today}_season${currentSeason}`
       } else {
-        fastify.log.info('on team, show postponed')
+        // show postponed matches - on team
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, pt.team_role_id, pt.team_id AS player_team_id
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.home_team_id=teams.id
@@ -6621,7 +6712,7 @@ async function GetUncompletedMatches(
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed
             FROM matches m, divisions d, venues v, teams
             WHERE m.date>=?
               AND m.home_team_id=teams.id
@@ -6649,7 +6740,7 @@ async function GetUncompletedMatches(
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*
+            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed
             FROM matches m, divisions d, venues v, teams
             WHERE m.home_team_id=teams.id
               AND teams.venue_id=v.id

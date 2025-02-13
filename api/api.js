@@ -1155,6 +1155,35 @@ fastify.register((fastify, options, done) => {
     },
   })
 
+  fastify.post('/match/unconfirm/:matchId', {
+    schema: {
+      summary: 'Unconfirm match',
+      description: 'Unconfirm match',
+      tags: ['Matches'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const userId = req.user.user.id
+        const matchId = req.params.matchId
+        const teamId = req.body.teamId
+        
+        if (await isOnTeamAndIsLeader(userId, teamId)) {
+          const res = await UnconfirmMatch(userId, matchId, teamId)
+          if (res) {
+            reply.code(200).send({status: 'ok', data: res})
+          } else {
+            reply.code(400).send({status: 'error', error: 'match_not_unconfirmed'})
+          }
+        } else {
+          reply.code(403).send({status: 'error', error: 'unauthorized'})
+        }
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'err', msg: 'Server error'})
+      }
+    },
+  })
+
   fastify.post('/match/confirm/:matchId', {
     schema: {
       summary: 'Submit match confirmation',
@@ -1177,7 +1206,7 @@ fastify.register((fastify, options, done) => {
         if (await isOnTeamAndIsLeader(userId, teamId)) {
           const res = await ConfirmMatch(userId, matchId, teamId)
           if (res) {
-            reply.code(200).send({status: 'ok'})
+            reply.code(200).send({status: 'ok', data: res})
           } else {
             reply.code(400).send({status: 'error', error: 'match_not_confirmed'})
           }
@@ -3275,13 +3304,38 @@ async function ConfirmMatch(userId, matchId, teamId) {
       `
       const res1 = await DoQuery(query1, [userId, matchId])
     }
-    return true
+    return {confirmed: userId, isHome: isHome} 
   } catch (e) {
     console.log(e)
     throw e
   }
 }
 
+async function UnconfirmMatch(userId, matchId, teamId) {
+  try {
+    const query0 = `
+      SELECT * FROM matches WHERE id=?
+    `
+    const res0 = await DoQuery(query0, [matchId])
+    const match = res0[0]
+    const isHome = teamId === match.home_team_id
+    if (isHome) {
+      const query1 = `
+        UPDATE matches SET home_confirmed=0 WHERE id=?
+      `
+      const res1 = await DoQuery(query1, [matchId])
+    } else {
+      const query1 = `
+        UPDATE matches SET away_confirmed=0 WHERE id=?
+      `
+      const res1 = await DoQuery(query1, [matchId])
+    }
+    return {unconfirmed: true, isHome: isHome}
+  } catch (e) {
+    console.log(e)
+    throw e
+  }
+}
 // this function (GetMatchDetails) is the spiritually the same as GetMatchStats
 async function GetMatchDetails(matchId) {
   try {

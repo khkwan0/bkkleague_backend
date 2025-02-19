@@ -42,3 +42,7 @@ If for some reason you need to unfinalize a match...
 3.  All events of the match (wins, player changes) are broadcast in real time to all players in the channel.
 4.  While the match is in progress (aka "UNFINALIZED"), all data is stored in a redis store on the backend.
 5.  One both teams have submitted the finalize button, the api will gather all the match data from redis, format it and save it to the database.
+
+### History and notes
+1.  For each match, all actions are recorded and can be retrieved in "history".  When finalized, this hsitory is stored in the matches table under the comments column.
+2.  Any player can drop a note pertaining to the match.  See "MORE" button at the bottom of the match screen.  All notes are recorded in the matches table under the comments column as well.

@@ -25,3 +25,20 @@
 2.  Replace ```NEW_SEASON_IDENTIFIER``` with the new ```season_identifier```
 3.  Run the script
 4.  Now all players will be migrated to new team ids under the table: ```players_teams```
+
+## Utilties
+
+### Password reset
+/script/password_reset.js
+
+### Unfinalize a match
+If for some reason you need to unfinalize a match...
+/script/unfinalize.js
+
+## How things work
+### Match Screens
+1.  When opening a match screen, a websocket connection is made from the client (mobile device) to the api server.
+2.  When the web socket is connected, all users of that match will join a "channel" that is associated with the match id.
+3.  All events of the match (wins, player changes) are broadcast in real time to all players in the channel.
+4.  While the match is in progress (aka "UNFINALIZED"), all data is stored in a redis store on the backend.
+5.  One both teams have submitted the finalize button, the api will gather all the match data from redis, format it and save it to the database.

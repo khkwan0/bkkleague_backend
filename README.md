@@ -16,13 +16,12 @@
 4.  Run the script
 5.  This will copy all the teams from the old season (```OLD_SEASON_IDENTIFIER```) to the new season.
 6.  Teams are copied into the same ```teams``` table, but wiuth new ```id```'s.
-7.  A separated table called ```team_transitions``` is also populated.  This table creates the mappiong between the old team id and new team id.
+7.  A separated table called ```teams_transitions``` is also populated.  This table creates the mapping between the old team id and new team id.
 8.  In the ```teams``` table in the database, set ```status_id``` = 0 for any teams that have dropped out from last season.
 9.  Any team with ```status_id === 0``` will not be migrated to the next season.
 
 ### Migrating players to the new teams
 1. Open the script ```migrate_players.js```
 2.  Replace ```NEW_SEASON_IDENTIFIER``` with the new ```season_identifier```
-3.  Replace ```OLD_SEASON_IDENTIFIER``` with the old ```season_identifer``` from (most likely NEW_SEASON_IDENTIFIER - 1)
-4.  Run the script
-5.  Now all players will be migrated to new team ids under the table: ```players_teams```
+3.  Run the script
+4.  Now all players will be migrated to new team ids under the table: ```players_teams```

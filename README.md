@@ -2,7 +2,19 @@
 
 ## Setting up a new season
 
-1.  In the app, go to settings -> admin -> season -> new season.
+### Creating a new season id
+1.  In the app, go to ```settings -> admin -> season -> new season```.
 2.  Give the new season a name
 3.  Save
 4.  Activate new season in the season list.
+5.  Check the database tables "season" for the *season_identifier* column.  This is the season number. (The column id is only used as a primary key, do not use this value as the season id).
+
+### Copying the old teams
+1.  Open the script ```migrate_teams_to_new_season.js```
+2.  Replace ```NEW_SEASON_IDENTIFIER``` with the season_identifier from above (#5)
+3.  Replace ```OLD_SEASON_IDENTIFIER``` with the season_identifer to copy from (most likely NEW_SEASON_IDENTIFIER - 1)
+4.  Run the script
+5.  This will copy all the teams from the old season (```OLD_SEASON_IDENTIFIER```) to the new season.
+6.  In the teams table in the database, set ```status_id``` = 0 for any teams that have dropped out from last season.
+
+### Nigrating players to the new teams

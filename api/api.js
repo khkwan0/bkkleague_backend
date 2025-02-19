@@ -437,7 +437,6 @@ fastify.post('/login', async (req, reply) => {
     if (res) {
       const token = await CreateAndSaveSecretKey(res)
       const jwt = fastify.jwt.sign({token: token})
-      console.log(jwt)
       return {
         status: 'ok',
         data: {
@@ -858,7 +857,13 @@ fastify.post('/login/register', async (req, reply) => {
             lastName,
           )
           if (newPlayerId) {
-            reply.code(200).send({status: 'ok'})
+            const player = await GetPlayer(newPlayerId)
+            console.log(player)
+            const token = await CreateAndSaveSecretKey(player)
+            console.log(token)
+            const jwt = fastify.jwt.sign({token: token})
+            console.log(jwt)
+            reply.code(200).send({status: 'ok', data: {token: jwt, user: player}})
           } else {
             reply.code(500).send({status: 'error', error: 'server_error'})
           }
@@ -1045,6 +1050,25 @@ fastify.get('/game/types', async (req, reply) => {
       res[gameType.short_name] = gameType
     })
     return res
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send()
+  }
+})
+
+fastify.post('/match/reschedule', async (req, reply) => {
+  try {
+    console.log(req.body.proposedData)
+    const q0 = `
+      UPDATE matches
+      SET postponed_proposal=?
+      WHERE id=?
+    `
+    // Fix parameter order: first param should be the JSON data, second param should be the matchId
+    const r0 = await DoQuery(q0, [JSON.stringify(req.body.proposedData), req.body.matchId])
+    
+    // Also fix undefined 'res' variable to 'r0'
+    reply.code(200).send({status: 'ok', data: r0})
   } catch (e) {
     console.log(e)
     reply.code(500).send()
@@ -6693,7 +6717,7 @@ async function GetUncompletedMatches(
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, pt.team_role_id, pt.team_id AS player_team_id
+              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, m.postponed_proposal, pt.team_role_id, pt.team_id AS player_team_id
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.date>=?
@@ -6723,7 +6747,7 @@ async function GetUncompletedMatches(
           FROM (
             SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
             FROM (
-              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, pt.team_role_id, pt.team_id AS player_team_id
+              SELECT m.id as match_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, m.postponed_proposal, pt.team_role_id, pt.team_id AS player_team_id
               FROM matches m, players_teams pt, divisions d, venues v, teams
               WHERE pt.player_id=?
                 AND m.home_team_id=teams.id
@@ -6766,7 +6790,7 @@ async function GetUncompletedMatches(
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed
+            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, m.postponed_proposal
             FROM matches m, divisions d, venues v, teams
             WHERE m.date>=?
               AND m.home_team_id=teams.id
@@ -6794,7 +6818,7 @@ async function GetUncompletedMatches(
         FROM (
           SELECT x.*, t.name AS home_team_name, t.short_name AS home_team_short_name
           FROM (
-            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed
+            SELECT m.id as match_id, m.status_id as match_status_id, m.date, d.name AS division_name, d.format, m.home_team_id, m.away_team_id, v.*, m.home_confirmed, m.away_confirmed, m.postponed_proposal
             FROM matches m, divisions d, venues v, teams
             WHERE m.home_team_id=teams.id
               AND teams.venue_id=v.id
@@ -6812,7 +6836,7 @@ async function GetUncompletedMatches(
       const currentSeason = (await GetCurrentSeason()).identifier
       params.push(currentSeason)
     }
-    if (cacheKey) {
+    if (false && cacheKey) {
       const cacheRes = await CacheGet(cacheKey)
       if (cacheRes) {
         fastify.log.info('Cache hit: ' + cacheKey)

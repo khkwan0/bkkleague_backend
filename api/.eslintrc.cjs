@@ -12,7 +12,7 @@ module.exports = {
   },
   rules: {
     semi: ['error', 'never'],
-    'no-extra-semi': 'off',
+    'no-extra-semi': 'on',
     'react-native/no-inline-styles': 'off',
     'react-hooks/exhaustive-deps': 'off',
   },

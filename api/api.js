@@ -1058,17 +1058,26 @@ fastify.get('/game/types', async (req, reply) => {
 
 fastify.post('/match/reschedule', async (req, reply) => {
   try {
-    console.log(req.body.proposedData)
-    const q0 = `
-      UPDATE matches
-      SET postponed_proposal=?
-      WHERE id=?
-    `
-    // Fix parameter order: first param should be the JSON data, second param should be the matchId
-    const r0 = await DoQuery(q0, [JSON.stringify(req.body.proposedData), req.body.matchId])
-    
-    // Also fix undefined 'res' variable to 'r0'
-    reply.code(200).send({status: 'ok', data: r0})
+    const userId = req.user.user.id
+    const matchId = req.body.matchId
+    const {teamId, isHome}= req.body.proposedData
+    if (await isOnTeamAndIsLeader(userId, teamId) && matchId && typeof isHome === 'boolean') {
+      const q0 = `
+        UPDATE matches
+        SET postponed_proposal=?
+        ${isHome ? ',away_confirmed=0' : ',home_confirmed=0'}
+        WHERE id=?
+      `
+      // Fix parameter order: first param should be the JSON data, second param should be the matchId
+      const r0 = await DoQuery(q0, [JSON.stringify(req.body.proposedData), matchId])
+
+      // confirm the match date
+      await ConfirmMatch(userId, matchId, teamId)
+
+      reply.code(200).send({status: 'ok', data: r0})
+    } else {
+      reply.code(403).send({status: 'error', error: 'unauthorized'})
+    }
   } catch (e) {
     console.log(e)
     reply.code(500).send()
@@ -1133,7 +1142,6 @@ fastify.register((fastify, options, done) => {
         const res = completed
           ? await GetMatchesBySeason((await GetCurrentSeason()).identifier)
           : await GetUncompletedMatches(userid, _newonly, noteam)
-
         // lets group the matches by date for the presentation layer
         if (completed) {
           const _matches = {}
@@ -3327,6 +3335,22 @@ async function ConfirmMatch(userId, matchId, teamId) {
         UPDATE matches SET away_confirmed=? WHERE id=?
       `
       const res1 = await DoQuery(query1, [userId, matchId])
+    }
+
+    // check if the match is confirmed and if a new proposed date is set
+    const query2 = `
+      SELECT * FROM matches WHERE id=?
+    `
+    const res2 = await DoQuery(query2, [matchId])
+    const match = res2[0]
+    if (match.home_confirmed && match.away_confirmed && match.postponed_proposal) {
+      if (typeof match.postponed_proposal.newDate !== 'undefined') {
+        const newDate = match.postponed_proposal.newDate
+        const query3 = `
+          UPDATE matches SET date=?, original_date=?, postponed_proposal=NULL WHERE id=?
+        `
+        const res3 = await DoQuery(query3, [DateTime.fromISO(newDate).toFormat('yyyy-MM-dd'), match.date, matchId])
+      }
     }
     return {confirmed: userId, isHome: isHome} 
   } catch (e) {
@@ -6712,6 +6736,7 @@ async function GetUncompletedMatches(
       params.push(parseInt(userid))
       if (typeof newonly !== 'undefined' && newonly === true) {
         // get upcoming matches
+        fastify.log.info('get upcoming matches, onTeam = true, newonly = true')
         query = `
           SELECT y.*, tt.name AS away_team_name, tt.short_name AS away_team_short_name
           FROM (

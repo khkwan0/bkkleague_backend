@@ -201,10 +201,11 @@ const DoQuery = (queryString, params) => {
                 subtitle: 'Test',
                 body: 'YO Yo!',
               },
+              sound: 'default',
             },
           },
           headers: {
-            'apns-priority': '5',
+            'apns-priority': '10',
           },
         },
       }
@@ -330,9 +331,9 @@ async function SendNotificationsFinal(
         apns: {
           payload: {
             aps: {
-              badge: 0,
               alert: {},
               contentAvailable: true,
+              content_available: true,
             },
           },
           headers: {
@@ -346,6 +347,7 @@ async function SendNotificationsFinal(
         payload.apns.payload.aps.alert.title = title
         payload.apns.payload.aps.alert.body = body
       }
+      payload.apns.payload.aps.sound = 'default'
       const res = await admin.messaging().sendEachForMulticast(payload)
       fastify.log.info(
         'Notification send: Success - ' +
@@ -903,6 +905,23 @@ fastify.post('/login/register', async (req, reply) => {
     }
   } catch (e) {
     console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/user/preferences', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const preferences = req.body.preferences
+    const q0 = `
+      INSERT INTO player_preferences (player_id, preferences)  
+      VALUES(?, ?)
+      ON DUPLICATE KEY UPDATE preferences=?
+      `
+    const r0 = await DoQuery(q0, [userId, JSON.stringify(preferences), JSON.stringify(preferences)])
+    reply.code(200).send({status: 'ok'})
+  } catch (e) {
+    console.error(e)
     reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })

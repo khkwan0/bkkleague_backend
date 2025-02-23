@@ -13,3 +13,6 @@ out.json
 *.log
 dumps/
 crons/
+log.txt
+*.csv
+*.json

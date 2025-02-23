@@ -134,6 +134,7 @@ const transporter = nodemailer.createTransport({
 })
 
 const firebaseAccount = require('./bangkok-pool-league-b8100-firebase-adminsdk-c8zuk-b93d8193a2.json')
+const {rootCertificates} = require("node:tls")
 admin.initializeApp({
   credential: admin.credential.cert(firebaseAccount),
 })
@@ -281,6 +282,27 @@ async function SendNotifications(userIds = [], title = '', body = '', badge = 0,
   if (userIds.length > 0) {
     try {
       const q0 = `
+        SELECT p.id, pp.preferences
+        FROM players p
+        LEFT JOIN player_preferences pp ON p.id = pp.player_id
+        WHERE p.id IN (?)
+      `
+      const r0 = await DoQuery(q0, [userIds.join(',')])
+
+      const silentUserIds = r0.filter(row => row?.preferences?.silentPushNotifications && row?.preferences?.enabledPushNotifications).map(row => row.id)
+      const withSoundUserIds = r0.filter(row => (!row?.preferences?.silentPushNotifications && row?.preferences?.enabledPushNotifications) || !row.preferences).map(row => row.id)
+      await SendNotificationsStep2(silentUserIds, title, body, badge, channelId, false)
+      await SendNotificationsStep2(withSoundUserIds, title, body, badge, channelId, true)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+}
+
+async function SendNotificationsStep2(userIds = [], title = '', body = '', badge = 0, channelId = '', withSound = true) {
+  if (userIds.length > 0) {
+    try {
+      const q0 = `
         SELECT id, fcm_tokens
         FROM players
         WHERE id IN (?)
@@ -296,7 +318,7 @@ async function SendNotifications(userIds = [], title = '', body = '', badge = 0,
         return parsedTokens
       })
       const finalTokens = tokens.flat()
-      await SendNotificationsFinal(finalTokens, tokenOwners, title, body, badge, channelId)
+      await SendNotificationsFinal(finalTokens, tokenOwners, title, body, badge, channelId, withSound)
     } catch (e) {
       console.error(e)
     }
@@ -310,6 +332,7 @@ async function SendNotificationsFinal(
     body = '',
     badge = 0,
     channelId = 'App Wide',
+    withSound = true,
   ) {
     if (tokens.length > 0) {
       try {
@@ -347,7 +370,9 @@ async function SendNotificationsFinal(
         payload.apns.payload.aps.alert.title = title
         payload.apns.payload.aps.alert.body = body
       }
-      payload.apns.payload.aps.sound = 'default'
+      if (withSound) {
+        payload.apns.payload.aps.sound = 'default'
+      }
       const res = await admin.messaging().sendEachForMulticast(payload)
       fastify.log.info(
         'Notification send: Success - ' +
@@ -987,7 +1012,6 @@ fastify.get('/user', async (req, reply) => {
     const userid = await GetPlayerIdFromToken(req.user.token)
     if (userid) {
       const userData = await GetPlayer(userid)
-      console.log(userData.nationality)
       return userData
     } else {
       fastify.log.error('No user id found from jwt')
@@ -3354,7 +3378,9 @@ async function HandleLogin(email = '', password = '') {
       // const pass = await bcrypt.compare(password, newHash) || bcrypt.compare(password, '$2b$10$uGO5hKEqjkbotcPB/PYyreyq8llYxQPPCobzkKkBAHSk0a8UMrmdi')
       const pass = await bcrypt.compare(password, newHash)
       if (pass) {
+        console.log('user', user)
         const player = await GetPlayer(user.player_id)
+        console.log('player', player)
         return player
       } else {
         return null
@@ -5985,12 +6011,22 @@ async function GetPlayer(playerId) {
     if (typeof playerId !== 'undefined') {
       let query = `
         SELECT *
-        FROM players
-        WHERE id=?
+        FROM players p
+        WHERE p.id=?
       `
       const playerRes = await DoQuery(query, [playerId])
       let player = null
       if (typeof playerRes[0] !== 'undefined') {
+        player = playerRes[0]
+        const q0 = `
+          SELECT *
+          FROM player_preferences
+          WHERE player_id=?
+        `
+        const r0 = await DoQuery(q0, [playerRes[0].id])
+        if (r0.length > 0) {
+          player.preferences = r0[0].preferences
+        }
         const seasonId = (await GetCurrentSeason()).identifier
         if (playerRes[0].merged_with_id !== 0) {
           query = `

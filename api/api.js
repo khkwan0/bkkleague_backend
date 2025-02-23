@@ -1330,6 +1330,7 @@ fastify.register((fastify, options, done) => {
         if (await isOnTeamAndIsLeader(userId, teamId)) {
           const res = await UnconfirmMatch(userId, matchId, teamId)
           if (res) {
+            await SendUnConfirmMatchNotifications(userId, matchId, teamId)
             reply.code(200).send({status: 'ok', data: res})
           } else {
             reply.code(400).send({status: 'error', error: 'match_not_unconfirmed'})
@@ -1365,8 +1366,8 @@ fastify.register((fastify, options, done) => {
 
         if (await isOnTeamAndIsLeader(userId, teamId)) {
           const res = await ConfirmMatch(userId, matchId, teamId)
-          await SendConfirmMatchNotifications(userId, matchId, teamId)
           if (res) {
+            await SendConfirmMatchNotifications(userId, matchId, teamId)
             reply.code(200).send({status: 'ok', data: res})
           } else {
             reply.code(400).send({status: 'error', error: 'match_not_confirmed'})
@@ -3501,24 +3502,56 @@ async function SendConfirmMatchNotifications(userId, matchId, teamId) {
   `
   const res1 = await DoQuery(query1, [targetTeamId])
   const players = res1.map(player => player.player_id)
-  /*
-  const query2 = `
-    SELECT id, fcm_tokens FROM players WHERE id IN (${players.join(',')})
-  `
-  const res2 = await DoQuery(query2, [players])
-  const playersWithTokens = res2.filter(player => player.fcm_tokens)
-  const tokenOwners = {}
-  const tokens = playersWithTokens.map(player => {
-    const parsedTokens = JSON.parse(player.fcm_tokens)
-    parsedTokens.forEach(token => {
-      tokenOwners[token] = player.id
-    })
-    return parsedTokens
-  })
-  const finalTokens = tokens.flat()
-  */
   const title = `BKK League Match Confirmation`
   const message = `${isHome ? teamName: targetTeamName} has confirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
+
+  // save the messages to the database
+  const playerSendMessages = players.map(playerId => SendMessage(userId, playerId, title, message))
+  await Promise.all(playerSendMessages)
+
+  // send a push notification to the recipients
+  await SendNotifications(players, title, message, 0, channelId = 'match_confirmation')
+}
+
+async function SendUnConfirmMatchNotifications(userId, matchId, teamId) {
+
+  // get the match details for home_team_id and away_team_id
+  const query0 = `
+    SELECT * FROM matches WHERE id=?
+  `
+  const res0 = await DoQuery(query0, [matchId])
+  const match = res0[0]
+  const isHome = teamId === match.home_team_id
+
+  let targetTeamId = 0
+  if (isHome) {
+    targetTeamId = match.away_team_id
+  } else {
+    targetTeamId = match.home_team_id
+  }
+
+  // get the team name for the sender
+  const teamNameQuery = `
+    SELECT name FROM teams WHERE id=?
+  `
+  const resTeamName = await DoQuery(teamNameQuery, [teamId])
+  const teamName = resTeamName[0].name
+
+  // get the team name for the recipient team
+  const targetTeamQuery = `
+    SELECT * FROM teams WHERE id=?
+  `
+  const resTargetTeam = await DoQuery(targetTeamQuery, [targetTeamId])
+  const targetTeamName = resTargetTeam[0].name
+
+  // get the captains and assistants for the recipient team
+  const query1 = `
+    SELECT * FROM players_teams WHERE team_id=? AND team_role_id > 0
+  `
+  const res1 = await DoQuery(query1, [targetTeamId])
+  const players = res1.map(player => player.player_id)
+  const title = `BKK League Match UNConfirmation`
+  const message = `${isHome ? teamName: targetTeamName} has unconfirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
 
   // save the messages to the database
   const playerSendMessages = players.map(playerId => SendMessage(userId, playerId, title, message))

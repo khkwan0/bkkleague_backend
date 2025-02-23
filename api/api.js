@@ -276,18 +276,44 @@ async function DeleteBadTokens(res, tokens, tokenOwners) {
   }
 }
 
-async function SendNotification(
-  tokens = [],
-  tokenOwners = {},
-  title = '',
-  body = '',
-  badge = 0,
-  channelId = 'App Wide',
-) {
-  if (tokens.length > 0) {
+async function SendNotifications(userIds = [], title = '', body = '', badge = 0, channelId = '') {
+  if (userIds.length > 0) {
     try {
-      const payload = {
-        tokens: tokens,
+      const q0 = `
+        SELECT id, fcm_tokens
+        FROM players
+        WHERE id IN (?)
+      `
+      const r0 = await DoQuery(q0, [userIds.join(',')])
+      const playersWithTokens = r0.filter(player => player.fcm_tokens)
+      const tokenOwners = {}
+      const tokens = playersWithTokens.map(player => {
+        const parsedTokens = JSON.parse(player.fcm_tokens)
+        parsedTokens.forEach(token => {
+          tokenOwners[token] = player.id
+        })
+        return parsedTokens
+      })
+      const finalTokens = tokens.flat()
+      await SendNotificationsFinal(finalTokens, tokenOwners, title, body, badge, channelId)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+}
+
+async function SendNotificationsFinal(
+    tokens = [],
+    tokenOwners = {},
+    title = '',
+    body = '',
+    badge = 0,
+    channelId = 'App Wide',
+  ) {
+    if (tokens.length > 0) {
+      try {
+        const payload = {
+          tokens: tokens,
         data: {
           content_available: 'true',
           priority: 'high',
@@ -304,8 +330,9 @@ async function SendNotification(
         apns: {
           payload: {
             aps: {
-              badge: badge,
+              badge: 0,
               alert: {},
+              contentAvailable: true,
             },
           },
           headers: {
@@ -314,8 +341,8 @@ async function SendNotification(
         },
       }
       if (title || body) {
-        payload.android.notifiction.title = title
-        payload.android.notifiction.body = body
+        payload.android.notification.title = title
+        payload.android.notification.body = body
         payload.apns.payload.aps.alert.title = title
         payload.apns.payload.aps.alert.body = body
       }
@@ -419,6 +446,8 @@ fastify.addHook('preHandler', async (req, reply) => {
     }
   }
 })
+
+// fastify BEGIN REST ENDPOINTS
 
 fastify.get('/', async (req, reply) => {
   reply.code(403).send()
@@ -1084,6 +1113,105 @@ fastify.post('/match/reschedule', async (req, reply) => {
   }
 })
 
+fastify.get('/messages/:userId', async (req, reply) => {
+  try {
+    const userId = parseInt(req.params.userId, 10)
+    if (!userId) {
+      reply.code(400).send({ status: 'error', error: 'invalid_user_id' })
+      return
+    }
+
+    const q0 = `
+      SELECT m.*, 
+             sender.nickname as sender_nickname,
+             receiver.nickname as receiver_nickname
+      FROM messages m
+      LEFT JOIN players sender ON m.from_player_id = sender.id
+      LEFT JOIN players receiver ON m.to_player_id = receiver.id
+      WHERE m.to_player_id = ?
+      AND m.deleted_at IS NULL
+      ORDER BY m.created_at DESC
+      LIMIT 100
+    `
+    const messages = await DoQuery(q0, [userId])
+    
+    // Format the created_at timestamp
+    const formattedMessages = messages.map(message => ({
+      ...message,
+      created_at: DateTime.fromJSDate(message.created_at).toISO()
+    }))
+    
+    reply.code(200).send({ 
+      status: 'ok', 
+      data: formattedMessages 
+    })
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({ status: 'error', error: 'server_error' })
+  }
+})
+
+fastify.post('/message/read', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const messageId = req.body.messageId
+    const q0 = `
+      UPDATE messages
+      SET read_at=NOW()
+      WHERE id=? AND to_player_id=?
+    `
+    const res = await DoQuery(q0, [messageId, userId])
+    if (res.affectedRows > 0) {
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(500).send({status: 'error', error: 'message_not_read'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.get('/message/unread/count', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const q0 = `
+      SELECT COUNT(*) as count
+      FROM messages
+      WHERE to_player_id=? AND read_at IS NULL AND deleted_at IS NULL AND from_player_id != ?
+    `
+    const res = await DoQuery(q0, [userId, userId])
+    reply.code(200).send({status: 'ok', data: res[0].count})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})  
+  }
+})
+
+fastify.post('/message/delete', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const messageId = req.body.messageId
+    console.log(userId, messageId)
+    const q0 = `
+      UPDATE messages
+      SET deleted_at=NOW()
+      WHERE id=? AND to_player_id=?
+    `
+    const res = await DoQuery(q0, [messageId, userId])
+    if (res.affectedRows > 0) {
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(500).send({status: 'error', error: 'message_not_deleted'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+
+
 fastify.register((fastify, options, done) => {
   fastify.get('/websockets', {
     schema: {
@@ -1237,6 +1365,7 @@ fastify.register((fastify, options, done) => {
 
         if (await isOnTeamAndIsLeader(userId, teamId)) {
           const res = await ConfirmMatch(userId, matchId, teamId)
+          await SendConfirmMatchNotifications(userId, matchId, teamId)
           if (res) {
             reply.code(200).send({status: 'ok', data: res})
           } else {
@@ -2156,6 +2285,7 @@ fastify.get('/player/raw/:playerId', async (req, reply) => {
 })
 
 fastify.post('/user/token', async (req, reply) => {
+  console.log(req.user)
   if (typeof req?.user?.user !== 'undefined') {
     try {
       const playerId = req.user.user.id
@@ -2183,6 +2313,7 @@ fastify.post('/user/token', async (req, reply) => {
             SET fcm_tokens=?
             WHERE id=?
           `
+          console.log(q0, JSON.stringify(tokens), playerId)
           const r0 = await DoQuery(q0, [JSON.stringify(tokens), playerId])
         }
       }
@@ -3070,6 +3201,8 @@ fastify.post('/admin/player/attribute', async (req, reply) => {
   }
 })
 
+// fastify END REST ENDPOINTS
+
 /* ---------  FINISH FASIFY ------------*/
 
 async function LogAdminAction(userId, url, data) {
@@ -3315,6 +3448,84 @@ async function isOnTeamAndIsLeader(userId, teamId) {
   `
   const res = await DoQuery(query0, [userId, teamId])
   return res.length > 0
+}
+
+async function SendMessage(from, to, title, message) {
+  try {
+    console.log(from, to, title, message)
+    const query0 = `
+      INSERT INTO messages(from_player_id, to_player_id, title, message)
+      VALUES(?, ?, ?, ?)
+    `
+    const res0 = await DoQuery(query0, [from, to, title, message])
+    return res0.insertId
+  } catch (e) {
+    console.log(e)
+  }
+}
+
+async function SendConfirmMatchNotifications(userId, matchId, teamId) {
+
+  // get the match details for home_team_id and away_team_id
+  const query0 = `
+    SELECT * FROM matches WHERE id=?
+  `
+  const res0 = await DoQuery(query0, [matchId])
+  const match = res0[0]
+  const isHome = teamId === match.home_team_id
+
+  let targetTeamId = 0
+  if (isHome) {
+    targetTeamId = match.away_team_id
+  } else {
+    targetTeamId = match.home_team_id
+  }
+
+  // get the team name for the sender
+  const teamNameQuery = `
+    SELECT name FROM teams WHERE id=?
+  `
+  const resTeamName = await DoQuery(teamNameQuery, [teamId])
+  const teamName = resTeamName[0].name
+
+  // get the team name for the recipient team
+  const targetTeamQuery = `
+    SELECT * FROM teams WHERE id=?
+  `
+  const resTargetTeam = await DoQuery(targetTeamQuery, [targetTeamId])
+  const targetTeamName = resTargetTeam[0].name
+
+  // get the captains and assistants for the recipient team
+  const query1 = `
+    SELECT * FROM players_teams WHERE team_id=? AND team_role_id > 0
+  `
+  const res1 = await DoQuery(query1, [targetTeamId])
+  const players = res1.map(player => player.player_id)
+  /*
+  const query2 = `
+    SELECT id, fcm_tokens FROM players WHERE id IN (${players.join(',')})
+  `
+  const res2 = await DoQuery(query2, [players])
+  const playersWithTokens = res2.filter(player => player.fcm_tokens)
+  const tokenOwners = {}
+  const tokens = playersWithTokens.map(player => {
+    const parsedTokens = JSON.parse(player.fcm_tokens)
+    parsedTokens.forEach(token => {
+      tokenOwners[token] = player.id
+    })
+    return parsedTokens
+  })
+  const finalTokens = tokens.flat()
+  */
+  const title = `BKK League Match Confirmation`
+  const message = `${isHome ? teamName: targetTeamName} has confirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
+
+  // save the messages to the database
+  const playerSendMessages = players.map(playerId => SendMessage(userId, playerId, title, message))
+  await Promise.all(playerSendMessages)
+
+  // send a push notification to the recipients
+  await SendNotifications(players, title, message, 0, channelId = 'match_confirmation')
 }
 
 async function ConfirmMatch(userId, matchId, teamId) {

@@ -1194,6 +1194,22 @@ fastify.get('/messages/:userId', async (req, reply) => {
   }
 })
 
+fastify.post('/message/read/all', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const q0 = `
+      UPDATE messages
+      SET read_at=NOW()
+      WHERE to_player_id=? AND read_at IS NULL
+    `
+    const res = await DoQuery(q0, [userId])
+    reply.code(200).send({status: 'ok', data: res.affectedRows})
+  } catch (e) {
+    console.error(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.post('/message/read', async (req, reply) => {
   try {
     const userId = req.user.user.id

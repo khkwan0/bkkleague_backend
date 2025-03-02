@@ -134,7 +134,7 @@ const transporter = nodemailer.createTransport({
 })
 
 const firebaseAccount = require('./bangkok-pool-league-b8100-firebase-adminsdk-c8zuk-b93d8193a2.json')
-const {rootCertificates} = require("node:tls")
+const {rootCertificates} = require('node:tls')
 admin.initializeApp({
   credential: admin.credential.cert(firebaseAccount),
 })
@@ -278,7 +278,13 @@ async function DeleteBadTokens(res, tokens, tokenOwners) {
   }
 }
 
-async function SendNotifications(userIds = [], title = '', body = '', badge = 0, channelId = '') {
+async function SendNotifications(
+  userIds = [],
+  title = '',
+  body = '',
+  badge = 0,
+  channelId = '',
+) {
   if (userIds.length > 0) {
     try {
       const q0 = `
@@ -289,17 +295,51 @@ async function SendNotifications(userIds = [], title = '', body = '', badge = 0,
       `
       const r0 = await DoQuery(q0, [userIds.join(',')])
 
-      const silentUserIds = r0.filter(row => row?.preferences?.silentPushNotifications && row?.preferences?.enabledPushNotifications).map(row => row.id)
-      const withSoundUserIds = r0.filter(row => (!row?.preferences?.silentPushNotifications && row?.preferences?.enabledPushNotifications) || !row.preferences).map(row => row.id)
-      await SendNotificationsStep2(silentUserIds, title, body, badge, channelId, false)
-      await SendNotificationsStep2(withSoundUserIds, title, body, badge, channelId, true)
+      const silentUserIds = r0
+        .filter(
+          row =>
+            row?.preferences?.silentPushNotifications &&
+            row?.preferences?.enabledPushNotifications,
+        )
+        .map(row => row.id)
+      const withSoundUserIds = r0
+        .filter(
+          row =>
+            (!row?.preferences?.silentPushNotifications &&
+              row?.preferences?.enabledPushNotifications) ||
+            !row.preferences,
+        )
+        .map(row => row.id)
+      await SendNotificationsStep2(
+        silentUserIds,
+        title,
+        body,
+        badge,
+        channelId,
+        false,
+      )
+      await SendNotificationsStep2(
+        withSoundUserIds,
+        title,
+        body,
+        badge,
+        channelId,
+        true,
+      )
     } catch (e) {
       console.error(e)
     }
   }
 }
 
-async function SendNotificationsStep2(userIds = [], title = '', body = '', badge = 0, channelId = '', withSound = true) {
+async function SendNotificationsStep2(
+  userIds = [],
+  title = '',
+  body = '',
+  badge = 0,
+  channelId = '',
+  withSound = true,
+) {
   if (userIds.length > 0) {
     try {
       const q0 = `
@@ -318,7 +358,15 @@ async function SendNotificationsStep2(userIds = [], title = '', body = '', badge
         return parsedTokens
       })
       const finalTokens = tokens.flat()
-      await SendNotificationsFinal(finalTokens, tokenOwners, title, body, badge, channelId, withSound)
+      await SendNotificationsFinal(
+        finalTokens,
+        tokenOwners,
+        title,
+        body,
+        badge,
+        channelId,
+        withSound,
+      )
     } catch (e) {
       console.error(e)
     }
@@ -326,18 +374,18 @@ async function SendNotificationsStep2(userIds = [], title = '', body = '', badge
 }
 
 async function SendNotificationsFinal(
-    tokens = [],
-    tokenOwners = {},
-    title = '',
-    body = '',
-    badge = 0,
-    channelId = 'App Wide',
-    withSound = true,
-  ) {
-    if (tokens.length > 0) {
-      try {
-        const payload = {
-          tokens: tokens,
+  tokens = [],
+  tokenOwners = {},
+  title = '',
+  body = '',
+  badge = 0,
+  channelId = 'App Wide',
+  withSound = true,
+) {
+  if (tokens.length > 0) {
+    try {
+      const payload = {
+        tokens: tokens,
         data: {
           content_available: 'true',
           priority: 'high',
@@ -919,7 +967,9 @@ fastify.post('/login/register', async (req, reply) => {
             console.log(token)
             const jwt = fastify.jwt.sign({token: token})
             console.log(jwt)
-            reply.code(200).send({status: 'ok', data: {token: jwt, user: player}})
+            reply
+              .code(200)
+              .send({status: 'ok', data: {token: jwt, user: player}})
           } else {
             reply.code(500).send({status: 'error', error: 'server_error'})
           }
@@ -943,7 +993,11 @@ fastify.post('/user/preferences', async (req, reply) => {
       VALUES(?, ?)
       ON DUPLICATE KEY UPDATE preferences=?
       `
-    const r0 = await DoQuery(q0, [userId, JSON.stringify(preferences), JSON.stringify(preferences)])
+    const r0 = await DoQuery(q0, [
+      userId,
+      JSON.stringify(preferences),
+      JSON.stringify(preferences),
+    ])
     reply.code(200).send({status: 'ok'})
   } catch (e) {
     console.error(e)
@@ -1036,7 +1090,6 @@ fastify.get('/rules', async (req, reply) => {
 fastify.get('/season', async (req, reply) => {
   try {
     const res = await GetActiveSeason()
-    console.log(res)
     reply.code(200).send({season: res[0].identifier, id: res[0].identifier})
   } catch (e) {
     reply.code(500).send()
@@ -1132,8 +1185,12 @@ fastify.post('/match/reschedule', async (req, reply) => {
   try {
     const userId = req.user.user.id
     const matchId = req.body.matchId
-    const {teamId, isHome}= req.body.proposedData
-    if (await isOnTeamAndIsLeader(userId, teamId) && matchId && typeof isHome === 'boolean') {
+    const {teamId, isHome} = req.body.proposedData
+    if (
+      (await isOnTeamAndIsLeader(userId, teamId)) &&
+      matchId &&
+      typeof isHome === 'boolean'
+    ) {
       const q0 = `
         UPDATE matches
         SET postponed_proposal=?
@@ -1141,7 +1198,10 @@ fastify.post('/match/reschedule', async (req, reply) => {
         WHERE id=?
       `
       // Fix parameter order: first param should be the JSON data, second param should be the matchId
-      const r0 = await DoQuery(q0, [JSON.stringify(req.body.proposedData), matchId])
+      const r0 = await DoQuery(q0, [
+        JSON.stringify(req.body.proposedData),
+        matchId,
+      ])
 
       // confirm the match date
       await ConfirmMatch(userId, matchId, teamId)
@@ -1156,42 +1216,49 @@ fastify.post('/match/reschedule', async (req, reply) => {
   }
 })
 
-fastify.get('/messages/:userId', async (req, reply) => {
-  try {
-    const userId = parseInt(req.params.userId, 10)
-    if (!userId) {
-      reply.code(400).send({ status: 'error', error: 'invalid_user_id' })
-      return
-    }
+fastify.get('/messages/:userId', {
+  schema: {
+    summary: 'Get messages for a user',
+    description: 'Get messages for a user',
+    tags: ['Messages'],
+  },
+  handler: async (req, reply) => {
+    try {
+      const userId = parseInt(req.params.userId, 10)
+      if (!userId) {
+        reply.code(400).send({status: 'error', error: 'invalid_user_id'})
+        return
+      }
 
-    const q0 = `
-      SELECT m.*, 
-             sender.nickname as sender_nickname,
-             receiver.nickname as receiver_nickname
-      FROM messages m
-      LEFT JOIN players sender ON m.from_player_id = sender.id
-      LEFT JOIN players receiver ON m.to_player_id = receiver.id
-      WHERE m.to_player_id = ?
-      AND m.deleted_at IS NULL
-      ORDER BY m.created_at DESC
-      LIMIT 100
-    `
-    const messages = await DoQuery(q0, [userId])
-    
-    // Format the created_at timestamp
-    const formattedMessages = messages.map(message => ({
-      ...message,
-      created_at: DateTime.fromJSDate(message.created_at).toISO()
-    }))
-    
-    reply.code(200).send({ 
-      status: 'ok', 
-      data: formattedMessages 
-    })
-  } catch (e) {
-    console.log(e)
-    reply.code(500).send({ status: 'error', error: 'server_error' })
-  }
+      const q0 = `
+        SELECT m.*, 
+               sender.nickname as sender_nickname,
+               receiver.nickname as receiver_nickname
+        FROM messages m
+        LEFT JOIN players sender ON m.from_player_id = sender.id
+        LEFT JOIN players receiver ON m.to_player_id = receiver.id
+        WHERE m.to_player_id = ?
+        AND m.deleted_at IS NULL
+        ORDER BY m.created_at DESC
+        LIMIT 100
+      `
+      const messages = await DoQuery(q0, [userId])
+
+      // Format the created_at timestamp
+      const formattedMessages = messages.map(message => ({
+        ...message,
+        created_at: DateTime.fromJSDate(message.created_at).toISO(),
+      }))
+
+      reply.code(200).send({
+        status: 'ok',
+        data: formattedMessages,
+      })
+    } catch (e) {
+      console.log(e)
+      reply.code(500).send({status: 'error', error: 'server_error'})
+    }
+  },
 })
 
 fastify.post('/message/read/all', async (req, reply) => {
@@ -1243,7 +1310,7 @@ fastify.get('/message/unread/count', async (req, reply) => {
     reply.code(200).send({status: 'ok', data: res[0].count})
   } catch (e) {
     console.log(e)
-    reply.code(500).send({status: 'error', error: 'server_error'})  
+    reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
 
@@ -1268,8 +1335,6 @@ fastify.post('/message/delete', async (req, reply) => {
     reply.code(500).send({status: 'error', error: 'server_error'})
   }
 })
-
-
 
 fastify.register((fastify, options, done) => {
   fastify.get('/websockets', {
@@ -1385,14 +1450,16 @@ fastify.register((fastify, options, done) => {
         const userId = req.user.user.id
         const matchId = req.params.matchId
         const teamId = req.body.teamId
-        
+
         if (await isOnTeamAndIsLeader(userId, teamId)) {
           const res = await UnconfirmMatch(userId, matchId, teamId)
           if (res) {
             await SendUnConfirmMatchNotifications(userId, matchId, teamId)
             reply.code(200).send({status: 'ok', data: res})
           } else {
-            reply.code(400).send({status: 'error', error: 'match_not_unconfirmed'})
+            reply
+              .code(400)
+              .send({status: 'error', error: 'match_not_unconfirmed'})
           }
         } else {
           reply.code(403).send({status: 'error', error: 'unauthorized'})
@@ -1413,7 +1480,7 @@ fastify.register((fastify, options, done) => {
       body: {
         type: 'object',
         properties: {
-          teamId: { type: 'number' },
+          teamId: {type: 'number'},
         },
       },
     },
@@ -1429,7 +1496,9 @@ fastify.register((fastify, options, done) => {
             await SendConfirmMatchNotifications(userId, matchId, teamId)
             reply.code(200).send({status: 'ok', data: res})
           } else {
-            reply.code(400).send({status: 'error', error: 'match_not_confirmed'})
+            reply
+              .code(400)
+              .send({status: 'error', error: 'match_not_confirmed'})
           }
         } else {
           reply.code(403).send({status: 'error', error: 'unauthorized'})
@@ -1586,10 +1655,11 @@ fastify.register((fastify, options, done) => {
   })
 
   fastify.get('/scores/live', {
+    logLevel: 'silent',
     schema: {
       description: 'Live scores of the last 24 hours',
       summary: 'Recent live scores',
-      tags: ['scores'],
+      tags: ['Scores'],
     },
     handler: async (req, reply) => {
       try {
@@ -3527,7 +3597,6 @@ async function SendMessage(from, to, title, message) {
 }
 
 async function SendConfirmMatchNotifications(userId, matchId, teamId) {
-
   // get the match details for home_team_id and away_team_id
   const query0 = `
     SELECT * FROM matches WHERE id=?
@@ -3564,18 +3633,25 @@ async function SendConfirmMatchNotifications(userId, matchId, teamId) {
   const res1 = await DoQuery(query1, [targetTeamId])
   const players = res1.map(player => player.player_id)
   const title = `BKK League Match Confirmation`
-  const message = `${isHome ? teamName: targetTeamName} has confirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
+  const message = `${isHome ? teamName : targetTeamName} has confirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
 
   // save the messages to the database
-  const playerSendMessages = players.map(playerId => SendMessage(userId, playerId, title, message))
+  const playerSendMessages = players.map(playerId =>
+    SendMessage(userId, playerId, title, message),
+  )
   await Promise.all(playerSendMessages)
 
   // send a push notification to the recipients
-  await SendNotifications(players, title, message, 0, channelId = 'match_confirmation')
+  await SendNotifications(
+    players,
+    title,
+    message,
+    0,
+    (channelId = 'match_confirmation'),
+  )
 }
 
 async function SendUnConfirmMatchNotifications(userId, matchId, teamId) {
-
   // get the match details for home_team_id and away_team_id
   const query0 = `
     SELECT * FROM matches WHERE id=?
@@ -3612,14 +3688,22 @@ async function SendUnConfirmMatchNotifications(userId, matchId, teamId) {
   const res1 = await DoQuery(query1, [targetTeamId])
   const players = res1.map(player => player.player_id)
   const title = `BKK League Match UNConfirmation`
-  const message = `${isHome ? teamName: targetTeamName} has unconfirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
+  const message = `${isHome ? teamName : targetTeamName} has unconfirmed the match on ${DateTime.fromJSDate(match.date).toFormat('dd MMM yyyy')}`
 
   // save the messages to the database
-  const playerSendMessages = players.map(playerId => SendMessage(userId, playerId, title, message))
+  const playerSendMessages = players.map(playerId =>
+    SendMessage(userId, playerId, title, message),
+  )
   await Promise.all(playerSendMessages)
 
   // send a push notification to the recipients
-  await SendNotifications(players, title, message, 0, channelId = 'match_confirmation')
+  await SendNotifications(
+    players,
+    title,
+    message,
+    0,
+    (channelId = 'match_confirmation'),
+  )
 }
 
 async function ConfirmMatch(userId, matchId, teamId) {
@@ -3648,16 +3732,24 @@ async function ConfirmMatch(userId, matchId, teamId) {
     `
     const res2 = await DoQuery(query2, [matchId])
     const match = res2[0]
-    if (match.home_confirmed && match.away_confirmed && match.postponed_proposal) {
+    if (
+      match.home_confirmed &&
+      match.away_confirmed &&
+      match.postponed_proposal
+    ) {
       if (typeof match.postponed_proposal.newDate !== 'undefined') {
         const newDate = match.postponed_proposal.newDate
         const query3 = `
           UPDATE matches SET date=?, original_date=?, postponed_proposal=NULL WHERE id=?
         `
-        const res3 = await DoQuery(query3, [DateTime.fromISO(newDate).toFormat('yyyy-MM-dd'), match.date, matchId])
+        const res3 = await DoQuery(query3, [
+          DateTime.fromISO(newDate).toFormat('yyyy-MM-dd'),
+          match.date,
+          matchId,
+        ])
       }
     }
-    return {confirmed: userId, isHome: isHome} 
+    return {confirmed: userId, isHome: isHome}
   } catch (e) {
     console.log(e)
     throw e

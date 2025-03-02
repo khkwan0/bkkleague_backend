@@ -1,5 +1,6 @@
 services:
   nginx:
+    restart: always
     image: nginx:alpine
     volumes:
       - ./etc/nginx:/etc/nginx
@@ -7,6 +8,7 @@ services:
     ports:
       - "8081:80"
   api:
+    restart: always
     build: ./api
     env_file:
       - environment
@@ -24,10 +26,12 @@ services:
         #    entrypoint: ["/usr/bin/mongod", "--dbpath", "/data/db", "--bind_ip", "localhost,bkkleague-mongo-1", "--bind_ip_all", "--replSet", "rs0", "--auth", "--keyFile", "/usr/src/app/mongo.keyfile"]
         #    entrypoint: ["/usr/bin/mongod", "--dbpath", "/data/db", "--bind_ip", "localhost,bkkleague-mongo-1", "--bind_ip_all", "--replSet", "rs0", "--keyFile", "/usr/src/app/mongo.keyfile"]
   redis:
+    restart: always
     image: redis
     volumes:
       - ./redis:/data
   mysql:
+    restart: always
     image: bkkleague_db:latest
     env_file:
       - environment
@@ -35,6 +39,7 @@ services:
       - ./mysql/data:/var/lib/mysql
       - ./dumps:/opt
   phpmyadmin:
+    restart: always
     image: phpmyadmin
     env_file:
       - environment

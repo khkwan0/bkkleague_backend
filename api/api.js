@@ -1,4 +1,4 @@
-const fastify = require('fastify')({logger: true, trustProxy: true})
+const fastify = require('fastify')({logger: true, trustProxy: true, bodyLimit: 1024 * 1024 * 10})
 const fastifyIO = require('fastify-socket.io')
 const fastifyJWT = require('@fastify/jwt')
 const cors = require('@fastify/cors')
@@ -1148,6 +1148,41 @@ fastify.post('/venue', async (req, reply) => {
   }
 })
 
+fastify.post('/v2/venue', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const res = await SaveVenue2(req.body.venue, userId)
+    if (res.status === 'ok') {
+      const {logo} = req.body.venue
+      if (logo) {
+        const imgType = logo.includes('data:image/png;base64,') ? 'png' : 'jpg'
+        const imgData = logo.slice(logo.indexOf(',') + 1)
+        const imgBuffer = Buffer.from(imgData, 'base64')
+        // check if image exists
+        let i = 1
+        let fileName = `${req.body.venue.name}.${imgType}`
+        let imgPath = `/usr/src/app/assets/logos/${fileName}`
+        while (await fileExists(imgPath)) {
+          fileName = `${req.body.venue.name}_${i}.${imgType}`
+          imgPath = `/usr/src/app/assets/logos/${fileName}`
+          i++
+        }
+        const res2 = await writeFile(imgPath, imgBuffer)
+        const q1 = `
+          UPDATE venues
+          SET logo=?
+          WHERE id=?
+        `
+        const r1 = await DoQuery(q1, [fileName, res.venueId])
+      }
+    }
+    reply.code(200).send(res)
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'err', error: 'server_error'})
+  }
+})
+
 fastify.get('/teams', async (req, reply) => {
   try {
     const res = await GetTeams()
@@ -1650,6 +1685,37 @@ fastify.register((fastify, options, done) => {
         return res
       } catch (e) {
         reply.code(500).send()
+      }
+    },
+  })
+
+  fastify.post('/team', {
+    schema: {
+      summary: 'Create a new team',
+      description: 'Create a new team',
+      tags: ['Teams'],
+      body: {
+        type: 'object',
+        properties: {
+          name: {type: 'string'},
+          venue_id: {type: 'number'},
+          
+        }
+      },
+    },
+    handler: async (req, reply) => {
+      try {
+        const userId = req.user.user.id
+        const {teamName, venueId, shortName, veryShortName} = req.body
+        if (userId) {
+          const res = await CreateTeam(teamName, shortName ?? '', veryShortName ?? '', venueId, userId)
+          reply.code(200).send({status: 'ok', data: res})
+        } else {
+          reply.code(403).send({status: 'error', error: 'unauthorized'})
+        }
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send({status: 'error', error: 'server_error'})
       }
     },
   })
@@ -4174,6 +4240,31 @@ async function GetSocialLogin(provider, userId) {
   } catch (e) {
     console.log(e)
     return null
+  }
+}
+
+async function SaveVenue2(venue) {
+  const {name, shortName, address, phone, latitude, longitude, website, email, plus} = venue
+  try {
+    const q0 = `
+      INSERT INTO venues(name, short_name, location, phone, latitude, longitude, website, email, plus)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    const r0 = await DoQuery(q0, [
+      name,
+      shortName ? shortName : '',
+      address ? address.trim() : '',
+      phone ? phone : null,
+      latitude ? latitude : null,
+      longitude ? longitude : null,
+      website ? website : null,
+      email ? email : null,
+      plus ? plus : null,
+    ])
+    return {status: 'ok', venueId: r0.insertId}
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
   }
 }
 
@@ -7123,6 +7214,54 @@ async function GetPostponedMatches() {
   } catch (e) {
     throw new Error(e)
   }
+}
+
+async function CreateTeam(teamName, shortName = '', veryShortName = '', venueId, userId) {
+  try {
+    const seasonId = (await GetCurrentSeason()).id
+    const q0 = `
+      INSERT INTO teams (name, short_name, very_short_name, division_id, venue_id, season_id) VALUES (?, ?, ?, ?, ?, ?)
+    `
+    const res = await DoQuery(q0, [teamName, shortName, veryShortName, 0, venueId, seasonId])
+    if (res.insertId) {
+      const teamId = res.insertId
+      console.log(teamId)
+      const q1 = `
+        INSERT INTO players_teams (player_id, team_id, team_role_id, active, season_id) VALUES (?, ?, 2, 1, ?)
+      `
+      const res2 = await DoQuery(q1, [userId, teamId, seasonId])
+      return teamId
+    } else {
+      throw new Error('Failed to create team')
+    }
+  } catch (e) {
+    console.error(e)
+    throw new Error(e)
+  }
+}
+
+async function fileExists(path) {
+  return new Promise((resolve, reject) => {
+    fs.stat(path, (err, stats) => {
+      if (err) {
+        resolve(false)
+      } else {
+        resolve(true)
+      }
+    })
+  })
+}
+
+async function writeFile(path, data) {
+  return new Promise((resolve, reject) => {
+    fs.writeFile(path, data, err => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(true)
+      }
+    })
+  })
 }
 
 async function GetUncompletedMatches(

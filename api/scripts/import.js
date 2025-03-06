@@ -24,20 +24,22 @@ const DoQuery = (queryString, params) => {
 }
 
 async function main() {
+	// console.log(process.argv[3])
   const res = excelToJson({
     sourceFile: process.argv[3]
   })
   const fixtures = res.Sheet1
+  // console.log(fixtures)
   let i = 0
   let rounds = {}
   while (i < fixtures.length) {
-    let div =70 
-    switch (fixtures[i].B) {
-      case '8B B': div = 71; break
-      case '8B C': div = 72; break
-      case '9B A': div = 73; break
-      case '9B B': div = 74; break
-      case '9B C': div = 75; break
+    let div =76 
+    switch (fixtures[i].A) {
+      case '8B B': div = 77; break
+      case '8B C': div = 78; break
+      case '9B A': div = 79; break
+      case '9B B': div = 80; break
+      case '9B C': div = 81; break
       default: break
     }
 
@@ -49,9 +51,10 @@ async function main() {
 
     let date = null
     try {
-      date = DateTime.fromFormat(fixtures[i].C, "M-d-yy").toFormat("yyyy-MM-dd")
+      // date = DateTime.fromFormat(fixtures[i].C, "M-d-yy").toFormat("yyyy-MM-dd")
       // date = DateTime.fromFormat(fixtures[i].C, "M-d-yy").plus({'days': 1}).toFormat("yyyy-MM-dd")
-      // date = DateTime.fromFormat(fixtures[i].B, "dd/MM/yyyy").toFormat("yyyy/MM/dd")
+      //date = DateTime.fromFormat(fixtures[i].B, "dd/MM/yyyy").toFormat("yyyy/MM/dd")
+      date = DateTime.fromISO(fixtures[i].B.toISOString()).toFormat("yyyy-MM-dd")
     } catch (e) {
       // date = DateTime.fromJSDate(fixtures[i].C).plus({'days': 1}).toFormat("yyyy-MM-dd")
       date = DateTime.fromJSDate(fixtures[i].C).toFormat("yyyy-MM-dd")
@@ -74,7 +77,6 @@ async function main() {
           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         const r0 = await DoQuery(q0, [1, div, 0, home_team_id, away_team_id, date, rounds[div], 1, '00:00:00', '00:00:00', 0, '', ''])
-        console.log(q0)
         home_team_id = 0
         away_team_id = 0
       }

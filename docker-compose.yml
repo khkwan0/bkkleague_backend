@@ -1,6 +1,6 @@
 services:
   nginx:
-    restart: always
+    restart: unless-stopped 
     image: nginx:alpine
     volumes:
       - ./etc/nginx:/etc/nginx

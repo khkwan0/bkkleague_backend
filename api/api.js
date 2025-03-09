@@ -2227,6 +2227,7 @@ fastify.get('/v2/matches/completed/season/:season', async (req, reply) => {
           match_id: match.match_id,
           first_break_home_team: match.first_break_home_team,
           format: match.format,
+          division_name: match.division_name,
         }
         /*
         const _match = {...match}
@@ -2272,7 +2273,7 @@ fastify.post('/matches/completed', async (req, reply) => {
           WHERE
             status_id=3
           AND
-            home_team_id=? or away_team_id=?
+            (home_team_id=? or away_team_id=?)
           ) AS x
           LEFT JOIN teams t
             ON x.home_team_id=t.id
@@ -7168,7 +7169,7 @@ async function GetPlayerByEmail(email) {
 async function GetMatchesBySeason(season) {
   try {
     let query = `
-      SELECT *, matches.status_id as match_status_id, matches.id as matchId, matches.id as match_id, matches.date as match_date, away.short_name as away_short_name, away.short_name as away_team_short_name, home.short_name as home_team_short_name, away.name as away_team_name, home.name as home_team_name, home.short_name as home_short_name, divisions.short_name as division_short_name
+      SELECT *, divisions.name as division_name, matches.status_id as match_status_id, matches.id as matchId, matches.id as match_id, matches.date as match_date, away.short_name as away_short_name, away.short_name as away_team_short_name, home.short_name as home_team_short_name, away.name as away_team_name, home.name as home_team_name, home.short_name as home_short_name, divisions.short_name as division_short_name
       FROM matches, divisions, teams home, teams away, venues
       WHERE matches.division_id=divisions.id
         AND divisions.season_id=?

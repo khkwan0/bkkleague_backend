@@ -1333,6 +1333,25 @@ fastify.post('/message/read', async (req, reply) => {
   }
 })
 
+fastify.post('/message/send', async (req, reply) => {
+  try {
+    const {senderId, recipientId, title, message} = req.body
+    console.log(senderId, recipientId, title, message)
+    if (!senderId || !recipientId || !message) {
+      reply.code(400).send({status: 'error', error: 'invalid_parameters'})
+      return
+    }
+    const q0 = `
+      INSERT INTO messages (from_player_id, to_player_id, title, message) VALUES (?, ?, ?, ?)
+    `
+    const res = await DoQuery(q0, [senderId, recipientId, title ?? '', message])
+    reply.code(200).send({status: 'ok', data: res})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/message/unread/count', async (req, reply) => {
   try {
     const userId = req.user.user.id

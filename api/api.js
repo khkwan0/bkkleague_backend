@@ -1005,6 +1005,27 @@ fastify.post('/user/preferences', async (req, reply) => {
   }
 })
 
+fastify.post('/user/language', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    const language = req.body.language
+    if (language) {
+      const q0 = `
+        UPDATE players
+        SET language=?
+        WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [language, userId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_language'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
 fastify.get('/users/merge/:currentId/:targetId', async (req, reply) => {
   try {
     const userId = req.user.user.id
@@ -1372,7 +1393,6 @@ fastify.post('/message/delete', async (req, reply) => {
   try {
     const userId = req.user.user.id
     const messageId = req.body.messageId
-    console.log(userId, messageId)
     const q0 = `
       UPDATE messages
       SET deleted_at=NOW()
@@ -1917,7 +1937,7 @@ fastify.register((fastify, options, done) => {
 
   fastify.get('/stats/team/players/internal/:teamId', {
     schema: {
-      summary: 'Team stats (current season). Test with 735.',
+      summary: 'Team stats. Test with 735.',
       description: 'Team (internal) statistics',
       tags: ['Stats'],
     },
@@ -4078,9 +4098,9 @@ async function GetMatchMetaInfo(matchId) {
         m.away_team_id=t2.id
     `
     const r0 = await DoQuery(q0, [matchId])
-    const score = JSON.parse(r0[0].score).frames
+    const score = r0[0].score ? JSON.parse(r0[0].score).frames : []
     const home_team_id = r0[0].home_team_id
-    const away_team_id = r0[0].away_team_id
+    // const away_team_id = r0[0].away_team_id
     let i = 0
     let home_frames = 0
     let away_frames = 0
@@ -5850,16 +5870,23 @@ async function FinalizeMatch(matchId) {
 
         // another pull for fast lookups
         const teams = await GetTeamsByMatchId(matchId)
-
         if (teams && typeof teams[0] !== 'undefined') {
           if (!isFriendly) {
             // save each frame in frames table
             let i = 0
             while (i < frames.length) {
+              /*  some HACK because frames[i].frameType was missing for some unknown reason...weird
+
+              let frameType = '9d'
+              if (((frames[i].frameNumber - 1) / 4) % 2 < 1) {
+                frameType = '9s'
+              }
+                */
               const toSave = {
                 match_id: matchId,
                 frame_number: frames[i].frameNumber - 1,
                 frame_type_id: transformedFrameTypes[frames[i].frameType].id,
+                // frame_type_id: transformedFrameTypes[frameType].id,  !!!!! HACK see above
                 home_win: frames[i].winner === teams[0].home_team_id ? 1 : 0,
               }
               const res = await SaveFrame(toSave)

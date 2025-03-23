@@ -298,14 +298,14 @@ async function SendNotifications(
       const silentUserIds = r0
         .filter(
           row =>
-            row?.preferences?.silentPushNotifications &&
+            !row?.preferences?.soundNotifications &&
             row?.preferences?.enabledPushNotifications,
         )
         .map(row => row.id)
       const withSoundUserIds = r0
         .filter(
           row =>
-            (!row?.preferences?.silentPushNotifications &&
+            (row?.preferences?.soundNotifications &&
               row?.preferences?.enabledPushNotifications) ||
             !row.preferences,
         )
@@ -460,9 +460,23 @@ async function SendNotificationToAdmins(body = '', title = '', badge = 0) {
         console.log(e)
       }
     })
-    SendNotification(tokens, tokenOwners, title, body, badge)
+    SendNotifications(tokens, tokenOwners, title, body, badge)
   } catch (e) {
     console.log(e)
+  }
+}
+
+async function IsNotificationEnabled(playerId) {
+  try {
+    const q0 = `
+      SELECT enabledPushNotifications
+      FROM player_preferences
+      WHERE player_id=?
+    `
+    const r0 = await DoQuery(q0, [playerId])
+    return r0[0].enabledPushNotifications
+  } catch (e) {
+    return false
   }
 }
 
@@ -1108,6 +1122,29 @@ fastify.get('/rules', async (req, reply) => {
   }
 })
 
+fastify.get('/usr/email/login', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    if (userId) {
+      const q0 = `
+        SELECT *
+        FROM pw
+        WHERE player_id=?
+      `
+      const r0 = await DoQuery(q0, [userId])
+      if (r0.length > 0) {
+        reply.code(200).send({status: 'ok', data: r0[0]})
+      } else {
+        reply.code(200).send({status: 'ok', data: null})
+      }
+    } else {
+      reply.code(401).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    reply.code(500).send()
+  }
+})
+
 fastify.get('/season', async (req, reply) => {
   try {
     const res = await GetActiveSeason()
@@ -1357,15 +1394,14 @@ fastify.post('/message/read', async (req, reply) => {
 fastify.post('/message/send', async (req, reply) => {
   try {
     const {senderId, recipientId, title, message} = req.body
-    console.log(senderId, recipientId, title, message)
     if (!senderId || !recipientId || !message) {
       reply.code(400).send({status: 'error', error: 'invalid_parameters'})
       return
     }
-    const q0 = `
-      INSERT INTO messages (from_player_id, to_player_id, title, message) VALUES (?, ?, ?, ?)
-    `
-    const res = await DoQuery(q0, [senderId, recipientId, title ?? '', message])
+    const res = await SendMessage(senderId, recipientId, title ?? '', message)
+    if (await IsNotificationEnabled(recipientId)) {
+      SendNotifications([recipientId], title ?? '', message, 0, 'General')
+    }
     reply.code(200).send({status: 'ok', data: res})
   } catch (e) {
     console.log(e)
@@ -3690,7 +3726,6 @@ async function isOnTeamAndIsLeader(userId, teamId) {
 
 async function SendMessage(from, to, title, message) {
   try {
-    console.log(from, to, title, message)
     const query0 = `
       INSERT INTO messages(from_player_id, to_player_id, title, message)
       VALUES(?, ?, ?, ?)
@@ -3753,7 +3788,7 @@ async function SendConfirmMatchNotifications(userId, matchId, teamId) {
     title,
     message,
     0,
-    (channelId = 'match_confirmation'),
+    (channelId = 'General'),
   )
 }
 
@@ -5499,7 +5534,7 @@ async function FormatHistory(_hist) {
     }
     if (type === 'win') {
       toReturn.msg.push(
-        `${playerNickname} set WIN frame: ${data.frameNumber} - side: ${data.side}`,
+        `${playerNickname} set WIN frame: ${data.frameNumber} - side: ${data.side} ${data.goldenBreak ? '(Golden Break)' : ''}`,
       )
       return toReturn
     }
@@ -5519,6 +5554,10 @@ async function FormatHistory(_hist) {
     }
     if (type === 'finalize') {
       toReturn.msg.push(`${playerNickname} signed the results.`)
+      return toReturn
+    }
+    if (type === 'clearwin') {
+      toReturn.msg.push(`${playerNickname} cleared the win.`)
       return toReturn
     }
   } catch (e) {
@@ -5748,10 +5787,13 @@ async function UpdateFrame(data, lockKey) {
           if (found) {
             cachedFrameInfo.frames[i].winner = data.winnerTeamId
             cachedFrameInfo.frames[i].winningPlayers = data.playerIds
+            cachedFrameInfo.frames[i].goldenBreak = data?.goldenBreak ?? false
           } else {
             // otherwise, add the frame data
             // note: this _shouldn't_ happen if front end enforces
             // players to be filled out before a "win" can be marked
+            // update 22.03.2025 - disabled the front end check for win,
+            // player no longer needs to be filled out before a win can be marked
             cachedFrameInfo.frames.push({
               frameIdx: data.frameIdx,
               winner: data.winnerTeamId,
@@ -5760,6 +5802,7 @@ async function UpdateFrame(data, lockKey) {
               awayPlayerIds: [],
               frameType: data.frameType,
               frameNumber: data.frameNumber,
+              goldenBreak: data?.goldenBreak ?? false,
             })
           }
         } else if (data.type === 'players') {
@@ -5780,6 +5823,7 @@ async function UpdateFrame(data, lockKey) {
               awayPlayerIds: [],
               frameType: data.frameType,
               frameNumber: data.frameNumber,
+              goldenBreak: data?.goldenBreak ?? false,
             }
             if (data.side === 'home') {
               newFrame.homePlayerIds[data.playerIdx] = data.playerId
@@ -5788,6 +5832,12 @@ async function UpdateFrame(data, lockKey) {
             }
             cachedFrameInfo.frames.push(newFrame)
           }
+        } else if (data.type === 'clearwin') {
+          if (found) {
+            cachedFrameInfo.frames[i].winner = 0
+            cachedFrameInfo.frames[i].winningPlayers = []
+            cachedFrameInfo.frames[i].goldenBreak = false
+          } 
         }
 
         // save it
@@ -7524,6 +7574,20 @@ fastify.ready().then(() => {
                     type: 'win',
                     frameIdx: data.data.frameIdx,
                     winnerTeamId: data.data.winnerTeamId,
+                    goldenBreak: data?.data?.goldenBreak ?? false,
+                  })
+                }
+
+                if (data.type === 'clearwin') {
+                  fastify.log.info(
+                    room + ' - frame_update_CLEAR_win: ' + JSON.stringify(data),
+                  )
+                  data.data.type = data.type
+                  await UpdateFrame(data.data, room)
+                  await Unfinalize(data.matchId)
+                  fastify.io.to(room).emit('frame_update', {
+                    type: 'clearwin',
+                    frameIdx: data.data.frameIdx,
                   })
                 }
 

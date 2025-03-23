@@ -570,6 +570,20 @@ fastify.post('/login', async (req, reply) => {
   }
 })
 
+fastify.get('/ad/spot/:spotId', async (req, reply) => {
+  try {
+    const spotId = req.params.spotId
+    const q0 = `
+      SELECT * FROM ad_spots where is_active=1
+    `
+    const r0 = await DoQuery(q0, [spotId])
+    reply.code(200).send(r0[Math.floor(Math.random() * r0.length)])
+  } catch (e) {
+    console.log(e)
+    reply.code(400).send()
+  }
+})
+
 fastify.post('/support', async (req, reply) => {
   reply.code(200).send('Received.  Thank you.')
 })
@@ -1122,7 +1136,7 @@ fastify.get('/rules', async (req, reply) => {
   }
 })
 
-fastify.get('/usr/email/login', async (req, reply) => {
+fastify.get('/user/email/login', async (req, reply) => {
   try {
     const userId = req.user.user.id
     if (userId) {
@@ -1141,6 +1155,80 @@ fastify.get('/usr/email/login', async (req, reply) => {
       reply.code(401).send({status: 'error', error: 'unauthorized'})
     }
   } catch (e) {
+    reply.code(500).send()
+  }
+})
+
+fastify.post('/user/email/update', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    if (userId) {
+      const email = req.body.email
+      const q0 = `
+        UPDATE pw
+        SET email=?
+        WHERE player_id=?
+      `
+      const r0 = await DoQuery(q0, [email, userId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(401).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    reply.code(500).send()
+  }
+})
+
+fastify.post('/user/password/update', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    if (userId) {
+      const currentPassword = req.body.currentPassword
+      const newPassword = req.body.newPassword
+      if (currentPassword && newPassword) {
+        if (ValidCurrentPassword(userId, currentPassword)) {
+          const res = await UpdatePasswordById(userId, newPassword)
+          reply.code(200).send({status: 'ok'})
+        } else {
+          reply.code(400).send({status: 'error', error: 'invalid_current_password'})
+        }
+      } else {
+        reply.code(400).send({status: 'error', error: 'invalid_parameters'})
+      }
+    } else {
+      reply.code(401).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send()
+  }
+})
+
+fastify.post('/user/email/setup', async (req, reply) => {
+  try {
+    const userId = req.user.user.id
+    if (userId) {
+      const email = req.body.email
+      const password = req.body.password
+      const confirmPassword = req.body.confirmPassword
+      if (password !== confirmPassword) {
+        reply.code(400).send({status: 'error', error: 'password_mismatch'})
+      } else {
+        const q0 = `
+          INSERT INTO pw (player_id, email, password_hash) 
+          VALUES(?, ?, ?)
+        `
+        const saltRounds = 10
+        const salt = await bcrypt.genSalt(saltRounds)
+        const passwordHash = await bcrypt.hash(password, salt)
+        const r0 = await DoQuery(q0, [userId, email, passwordHash])
+        reply.code(200).send({status: 'ok'})
+      }
+    } else {
+      reply.code(401).send({status: 'error', error: 'unauthorized'})
+    }
+  } catch (e) {
+    console.log(e)
     reply.code(500).send()
   }
 })
@@ -3592,6 +3680,40 @@ async function LoginAs(playerId) {
     console.log(e)
   }
 }
+
+async function ValidCurrentPassword(userId, password) {
+  try {
+    const q0 = `
+      SELECT password_hash
+      FROM pw
+      WHERE player_id=?
+    `
+    const r0 = await DoQuery(q0, [userId])
+    const hash = r0[0].password_hash
+    if (await ValidatePassword(password, hash)) {
+      return true
+    } else {
+      return false
+    }
+  } catch (e) {
+    console.error(e)
+    return false
+  }
+}
+
+async function ValidatePassword(password, hash) {
+  try {
+    const newHash = hash.match(/^\$2y/)
+      ? hash.replace('$2y', '$2a')
+      : hash 
+    const pass = await bcrypt.compare(password, newHash)
+    return pass
+  } catch (e) {
+    console.error(e)
+    return false
+  }
+}
+
 async function HandleLogin(email = '', password = '') {
   try {
     const user = await GetUserByEmail(email)
@@ -3606,9 +3728,7 @@ async function HandleLogin(email = '', password = '') {
       // const pass = await bcrypt.compare(password, newHash) || bcrypt.compare(password, '$2b$10$uGO5hKEqjkbotcPB/PYyreyq8llYxQPPCobzkKkBAHSk0a8UMrmdi')
       const pass = await bcrypt.compare(password, newHash)
       if (pass) {
-        console.log('user', user)
         const player = await GetPlayer(user.player_id)
-        console.log('player', player)
         return player
       } else {
         return null
@@ -3652,6 +3772,23 @@ async function HandleSocialLogin(provider, userId, displayName, picUrl = null) {
     console.log(e)
     fastify.log.error(e.message)
     return null
+  }
+}
+
+async function UpdatePasswordById(userId, password) {
+  try {
+    const saltRounds = 10
+    const salt = await bcrypt.genSalt(saltRounds)
+    const hash = await bcrypt.hash(password, salt)
+    const query = `
+      UPDATE pw
+      SET password_hash=?
+      WHERE player_id=?
+    `
+    const res = await DoQuery(query, [hash, userId])
+    return res
+  } catch (e) {
+    throw new Error(e)
   }
 }
 

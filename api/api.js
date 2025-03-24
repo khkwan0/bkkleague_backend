@@ -570,9 +570,48 @@ fastify.post('/login', async (req, reply) => {
   }
 })
 
+let enabledAds = true
+
+fastify.get('/ad/spot', async (req, reply) => {
+  try {
+    reply.code(200).send({status: 'error', enabledAds: enabledAds})
+  } catch (e) {
+    reply.code(200).send({status: 'error', enabledAds: enabledAds ?? 'unknown'})
+  }
+})
+
+fastify.get('/ad/status/:option', async (req, reply) => {
+  try {
+    const option = req.params.option ?? null
+    if (option && option.toLowerCase() === 'on') {
+      enabledAds = true
+    }
+    if (option && option.toLowerCase()  === 'off') {
+      enabledAds = false
+    }
+    reply.code(200).send({status: 'ok', enabledads: enabledAds})
+  } catch (e) {
+    reply.code(200).send({status: 'error', enabledAds: enabledAds})
+  }
+})
+
 fastify.get('/ad/spot/:spotId', async (req, reply) => {
   try {
     const spotId = req.params.spotId
+    if (spotId && spotId === 'on') {
+      enabledAds = true
+      reply.code(200).send({status: 'ok', enabledads: enabledAds})
+      return
+    }
+    if (spotId && spotId === 'off') {
+      enabledAds = false
+      reply.code(200).send({status: 'ok', enabledads: enabledAds})
+      return
+    }
+    if (!enabledAds) {
+      reply.code(200).send({status: 'ok'})
+      return
+    }
     const q0 = `
       SELECT * FROM ad_spots where is_active=1
     `
@@ -580,7 +619,7 @@ fastify.get('/ad/spot/:spotId', async (req, reply) => {
     reply.code(200).send(r0[Math.floor(Math.random() * r0.length)])
   } catch (e) {
     console.log(e)
-    reply.code(400).send()
+    reply.code(200).send({status: 'error', enabledAds: enabledAds ?? 'unknown'})
   }
 })
 
@@ -1499,14 +1538,18 @@ fastify.post('/message/send', async (req, reply) => {
 
 fastify.get('/message/unread/count', async (req, reply) => {
   try {
-    const userId = req.user.user.id
-    const q0 = `
-      SELECT COUNT(*) as count
-      FROM messages
-      WHERE to_player_id=? AND read_at IS NULL AND deleted_at IS NULL AND from_player_id != ?
-    `
-    const res = await DoQuery(q0, [userId, userId])
-    reply.code(200).send({status: 'ok', data: res[0].count})
+    if (typeof req?.user?.user?.id === 'undefined') {
+      reply.code(200).send({status: 'ok', data: 0})
+    } else {
+      const userId = req.user.user.id
+      const q0 = `
+        SELECT COUNT(*) as count
+        FROM messages
+        WHERE to_player_id=? AND read_at IS NULL AND deleted_at IS NULL AND from_player_id != ?
+      `
+      const res = await DoQuery(q0, [userId, userId])
+      reply.code(200).send({status: 'ok', data: res[0].count})
+    }
   } catch (e) {
     console.log(e)
     reply.code(500).send({status: 'error', error: 'server_error'})

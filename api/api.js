@@ -625,6 +625,39 @@ fastify.get('/ad/spot/:spotId', async (req, reply) => {
   }
 })
 
+fastify.get('/ad/frequency/:frequency', async (req, reply) => {
+  try {
+    const _frequency = req.params.frequency
+    if (_frequency) {
+      const frequency = parseInt(_frequency)
+      const cacheKey = 'ad_frequency'
+      await CacheSet(cacheKey, frequency)
+      reply.code(200).send({status: 'ok', frequency: frequency})
+    } else {
+      reply.code(200).send({status: 'error', frequency: 0})
+    }
+  } catch (e) {
+    fastify.log.error('Set Ad frequency error: ' + e)
+    reply.code(200).send({status: 'error', frequency: 0})
+  }
+})
+
+fastify.get('/ad/frequency', async (req, reply) => {
+  try {
+    const cacheKey = 'ad_frequency'
+    const frequency = await CacheGet(cacheKey)
+    if (frequency) {
+      reply.code(200).send({status: 'ok', frequency: parseInt(frequency)})
+    } else {
+      fastify.log.error('Ad frequency not found')
+      reply.code(200).send({status: 'error', frequency: 0})
+    }
+  } catch (e) {
+    fastify.log.error('Ad Catch frequency error: ' + e)
+    reply.code(200).send({status: 'error', frequency: 0})
+  }
+})
+
 fastify.get('/ad/click/:id', async (req, reply) => {
   try {
     const id = req.params.id

@@ -628,12 +628,13 @@ fastify.get('/ad/spot/:spotId', async (req, reply) => {
 fastify.get('/ad/click/:id', async (req, reply) => {
   try {
     const id = req.params.id
+    const userId = req?.user?.user?.id ?? null
     if (id) {
       const q0 = `
-        INSERT into ad_clicks (ad_spot_id)  
-        VALUES (?)
+        INSERT into ad_clicks (ad_spot_id, player_id)  
+        VALUES (?, ?)
       `
-      await DoQuery(q0, [id])
+      await DoQuery(q0, [id, userId])
       const q1 = `
         SELECT click_url FROM ad_spots where id=?
       `

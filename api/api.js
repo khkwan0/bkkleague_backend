@@ -616,10 +616,40 @@ fastify.get('/ad/spot/:spotId', async (req, reply) => {
       SELECT * FROM ad_spots where is_active=1
     `
     const r0 = await DoQuery(q0, [spotId])
-    reply.code(200).send(r0[Math.floor(Math.random() * r0.length)])
+    const randomIndex = Math.floor(Math.random() * r0.length)
+    const toServe = r0[randomIndex]
+    reply.code(200).send(toServe)
   } catch (e) {
     console.log(e)
     reply.code(200).send({status: 'error', enabledAds: enabledAds ?? 'unknown'})
+  }
+})
+
+fastify.get('/ad/click/:id', async (req, reply) => {
+  try {
+    const id = req.params.id
+    if (id) {
+      const q0 = `
+        INSERT into ad_clicks (ad_spot_id)  
+        VALUES (?)
+      `
+      await DoQuery(q0, [id])
+      const q1 = `
+        SELECT click_url FROM ad_spots where id=?
+      `
+      const r1 = await DoQuery(q1, [id])
+      const redirectUrl = r1[0].click_url
+      if (redirectUrl) {
+        reply.code(200).send({status: 'ok', url: redirectUrl})
+      } else {
+        reply.code(404).send()
+      }
+    } else {
+      reply.code(404).send()
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(404).send()
   }
 })
 

@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+:root {
+  --background: #1a1a1a;
+  --foreground: #ffffff;
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --secondary: #374151;
+  --secondary-hover: #4b5563;
+  --error: #ef4444;
+  --success: #22c55e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Custom styles for dark theme */
+.bg-gray-50 {
+  background-color: #1a1a1a;
+}
+
+.text-gray-900 {
+  color: #ffffff;
+}
+
+.text-gray-600 {
+  color: #9ca3af;
+}
+
+.border-gray-300 {
+  border-color: #374151;
+}
+
+.placeholder-gray-500 {
+  color: #6b7280;
+}
+
+.bg-white {
+  background-color: #1f2937;
+}
+
+.text-gray-900 {
+  color: #ffffff;
+}
+
+.bg-indigo-600 {
+  background-color: var(--primary);
+}
+
+.hover\:bg-indigo-700:hover {
+  background-color: var(--primary-hover);
+}
+
+.text-indigo-600 {
+  color: var(--primary);
+}
+
+.hover\:text-indigo-500:hover {
+  color: var(--primary-hover);
+}
+
+.focus\:ring-indigo-500:focus {
+  --tw-ring-color: var(--primary);
+}
+
+.focus\:border-indigo-500:focus {
+  border-color: var(--primary);
+}
+
+.border-gray-300 {
+  border-color: #374151;
+}
+
+.text-red-600 {
+  color: var(--error);
+}
+
+.border-red-300 {
+  border-color: var(--error);
+}
+
+.bg-indigo-400 {
+  background-color: #818cf8;
+}

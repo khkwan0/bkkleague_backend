@@ -41,3 +41,12 @@ export async function getAdById(id) {
   }
 }
 
+export async function createAd(accountId, title, message, click_url, is_active) {
+  try {
+    const ad = await query('INSERT INTO ad_spots (account_id, title, message, click_url, is_active) VALUES (?, ?, ?, ?, ?)', [accountId, title, message, click_url, is_active]);
+    return ad.insertId;
+  } catch (error) {
+    console.error('Error creating ad:', error);
+    throw new Error('Failed to create ad');
+  }
+}

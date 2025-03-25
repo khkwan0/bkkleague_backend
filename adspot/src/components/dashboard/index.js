@@ -38,6 +38,10 @@ export default function DashboardComponent() {
     }
   };
 
+  const handleAdUpdate = (updatedAd) => {
+    setAds(ads.map(ad => ad.id === updatedAd.id ? updatedAd : ad));
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
@@ -52,7 +56,12 @@ export default function DashboardComponent() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {ads.map((ad) => (
-          <AdCard key={ad.id} ad={ad} toggleAdStatus={toggleAdStatus} />
+          <AdCard 
+            key={ad.id} 
+            ad={ad} 
+            toggleAdStatus={toggleAdStatus}
+            onUpdate={handleAdUpdate}
+          />
         ))}
       </div>
     </div>

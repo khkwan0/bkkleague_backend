@@ -93,13 +93,17 @@ export default function AdCard({ad, toggleAdStatus, onUpdate}) {
       {/* Title */}
       <div className="flex justify-between items-start mb-4">
         {isEditing ? (
-          <input
-            type="text"
-            name="title"
-            value={editData.title}
-            onChange={handleEditChange}
-            className="text-xl font-semibold text-gray-900 border rounded px-2 py-1 w-full"
-          />
+          <div>
+            <input
+              type="text"
+              name="title"
+              maxLength={50}
+              value={editData.title}
+              onChange={handleEditChange}
+              className="text-xl font-semibold text-gray-900 border rounded px-2 py-1 w-full"
+            />
+            <div className="text-sm text-gray-500">Title (required): {50 - editData.title.length} characters remaining</div>
+          </div>
         ) : (
           <h2 className="text-xl font-semibold text-gray-900">{ad.title}</h2>
         )}
@@ -130,12 +134,16 @@ export default function AdCard({ad, toggleAdStatus, onUpdate}) {
       
       {/* Message */}
       {isEditing ? (
-        <textarea
-          name="message"
-          value={editData.message}
-          onChange={handleEditChange}
-          className="text-gray-600 mb-4 w-full border rounded px-2 py-1 h-24"
-        />
+        <div>
+          <textarea
+            name="message"
+            maxLength={100}
+            value={editData.message}
+            onChange={handleEditChange}
+            className="text-gray-600 w-full border rounded px-2 py-1 h-24"
+          />
+          <div className="text-sm text-gray-500">Message (optional): {100 - editData.message.length} characters remaining</div>
+        </div>
       ) : (
         <p className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-wrap">{ad.message}</p>
       )}
@@ -175,6 +183,7 @@ export default function AdCard({ad, toggleAdStatus, onUpdate}) {
             <input
               type="text"
               name="click_url"
+              maxLength={80}
               value={editData.click_url}
               onChange={handleEditChange}
               className="flex-1 border rounded px-2 py-1"

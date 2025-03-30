@@ -2900,6 +2900,103 @@ fastify.get('/players/unique', async (req, reply) => {
   }
 })
 
+fastify.get('/countries', async (req, reply) => {
+  try {
+    const res = await GetAllCountries()
+    reply.code(200).send({status: 'ok', data: res})
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/user/nickname', async (req, reply) => {
+  try {
+    const playerId = req.user.user.id
+    const nickname = req.body.nickname
+    if (playerId && nickname) {
+      const q0 = `
+        UPDATE players
+        SET nickname=?
+      WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [nickname, playerId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})  
+
+fastify.post('/user/nationality', async (req, reply) => {
+  try {
+    const playerId = req.user.user.id 
+    const nationalityId = req.body.nationality
+    if (playerId && nationalityId) {
+      const q0 = `
+        UPDATE players
+        SET nationality_id=?
+      WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [nationalityId, playerId])
+      const q1 = `
+        SELECT * from countries WHERE id=?
+      `
+      const r1 = await DoQuery(q1, [nationalityId])
+      reply.code(200).send({status: 'ok', data: r1[0]})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/user/first_name', async (req, reply) => {
+  try {
+    const playerId = req.user.user.id
+    const firstName = req.body.firstName
+    if (playerId && firstName) {
+      const q0 = `
+        UPDATE players
+        SET firstname=?
+      WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [firstName, playerId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+    reply.code(500).send({status: 'error', error: 'server_error'})
+  }
+})
+
+fastify.post('/user/last_name', async (req, reply) => {
+  try {
+    const playerId = req.user.user.id
+    const lastName = req.body.lastName
+    if (playerId && lastName) {
+      const q0 = `
+        UPDATE players
+        SET lastname=?
+      WHERE id=?
+      `
+      const r0 = await DoQuery(q0, [lastName, playerId])
+      reply.code(200).send({status: 'ok'})
+    } else {
+      reply.code(400).send({status: 'error', error: 'invalid_params'})
+    }
+  } catch (e) {
+    console.log(e)
+  }
+})
+
 fastify.get('/stats', async (req, reply) => {
   try {
     const playerId = req.query.playerid ?? null
@@ -4800,6 +4897,19 @@ async function GetPlayerInfo(playerId) {
     const teams = await DoQuery(query, [playerId])
     player.teams = teams.map(team => team.short_name)
     return player
+  } catch (e) {
+    console.log(e)
+    throw new Error(e)
+  }
+}
+
+async function GetAllCountries() {
+  try {
+    const query = `
+      SELECT * FROM countries WHERE status_id=1
+    `
+    const res = await DoQuery(query, [])
+    return res
   } catch (e) {
     console.log(e)
     throw new Error(e)

@@ -1,15 +1,25 @@
 'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 export default function Login() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    const reset = searchParams.get('reset');
+    if (reset === 'success') {
+      setSuccessMessage('Your password has been reset successfully. Please log in with your new password.');
+    }
+  }, [searchParams]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -76,17 +86,27 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ 
+          backgroundImage: 'url("/adspot_image6.png")',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat'
+        }} 
+      />
+      <div className="absolute inset-0 bg-gray-900/75" />
+      <div className="max-w-md w-full space-y-8 relative z-10">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
             Sign in to your account
           </h2>
           <p className="mt-2 text-center text-sm text-gray-400">
             Or{' '}
-            <a href="/auth/register" className="font-medium text-indigo-400 hover:text-indigo-300">
+            <Link href="/auth/register" className="font-medium text-indigo-400 hover:text-indigo-300">
               create a new account
-            </a>
+            </Link>
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -149,11 +169,17 @@ export default function Login() {
             </div>
 
             <div className="text-sm">
-              <a href="#" className="font-medium text-indigo-400 hover:text-indigo-300">
+              <Link href="/auth/forgot-password" className="font-medium text-indigo-400 hover:text-indigo-300">
                 Forgot your password?
-              </a>
+              </Link>
             </div>
           </div>
+
+          {successMessage && (
+            <div className="text-sm text-green-400 text-center">
+              {successMessage}
+            </div>
+          )}
 
           {errors.submit && (
             <div className="text-sm text-red-400 text-center">
@@ -177,3 +203,4 @@ export default function Login() {
     </div>
   );
 }
+

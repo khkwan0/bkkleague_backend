@@ -13,6 +13,8 @@ const redis = createClient({
   url: process.env.REDIS_URL,
 })
 
+redis.on('error', (err) => console.error('Redis Client Error', err));
+
 ;(async () => {
   await redis.connect()
 })()
@@ -67,6 +69,32 @@ export async function set(key, value, ttlSeconds) {
     const redisError = new RedisError(
       `Failed to set value in Redis: ${error.message}`,
       'set',
+      error
+    );
+    console.error(redisError);
+    throw redisError;
+  }
+}
+
+/**
+ * Delete a key from Redis
+ * @param {string} key - The key to delete from Redis
+ * @returns {Promise<boolean>} True if successful, false otherwise
+ * @throws {RedisError} When validation fails or Redis operation fails
+ */
+export async function del(key) {
+  // Input validation
+  if (!key || typeof key !== 'string') {
+    throw new RedisError('Key must be a non-empty string', 'del', null);
+  }
+
+  try {
+    await redis.del(key);
+    return true;
+  } catch (error) {
+    const redisError = new RedisError(
+      `Failed to delete key from Redis: ${error.message}`,
+      'del',
       error
     );
     console.error(redisError);

@@ -47,6 +47,18 @@ export async function SendVerificationEmail(email, token) {
   }
 }
 
+export async function SendForgotPasswordEmail(email, resetLink) {
+  const emailContent = `
+    <h1>Reset Your Password</h1>
+    <p>Click the link below to reset your password:</p>
+    <a href="${resetLink}">${resetLink}</a>
+    <p>This link will expire in 1 hour.</p>
+    <p>If you didn't request this, please ignore this email.</p>
+  `;
+
+  await sendEmail(email, 'Reset Your Password', emailContent);
+}
+
 export async function ChangePassword(userId, currentPassword, newPassword) {
   try {
     const [user] = await query(

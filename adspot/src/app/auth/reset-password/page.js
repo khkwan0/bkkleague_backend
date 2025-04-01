@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -15,6 +15,7 @@ function ResetPasswordForm() {
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isValidToken, setIsValidToken] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     const validateToken = async () => {
@@ -32,6 +33,8 @@ function ResetPasswordForm() {
         setIsValidToken(true);
       } catch (error) {
         setIsValidToken(false);
+      } finally {
+        setIsMounted(true);
       }
     };
 
@@ -104,7 +107,7 @@ function ResetPasswordForm() {
     }
   };
 
-  if (!token || !isValidToken) {
+  if ((!token || !isValidToken) && isMounted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">

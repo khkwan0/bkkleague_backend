@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { query } from "@/lib/db";
+import { set } from "@/lib/cache";
+import crypto from "crypto";
+import { SendVerificationEmail } from "@/lib/auth";
 
 export async function POST(request) {
   try {
@@ -13,12 +16,16 @@ export async function POST(request) {
     // Hash the password
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
-
+    const verificationToken = crypto.randomBytes(32).toString('hex');
     // Save to database
-    await query(
+    const res = await query(
       "INSERT INTO ad_accounts (email, hash) VALUES (?, ?)",
       [email, hashedPassword]
     );
+    if (res.insertId) {
+      await set(verificationToken, email, 60 * 60 * 24);
+    }
+    await SendVerificationEmail(email, verificationToken);
 
     return NextResponse.json({ message: "User registered successfully" }, { status: 201 });
   } catch (error) {

@@ -9,6 +9,7 @@ export default function Register() {
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -67,6 +68,7 @@ export default function Register() {
       
       // Handle successful registration
       console.log('Registration successful:', data);
+      setIsSuccess(true);
     } catch (error) {
       console.error('Registration failed:', error);
       setErrors(prev => ({
@@ -77,6 +79,29 @@ export default function Register() {
       setIsLoading(false);
     }
   };
+
+  if (isSuccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
+          <div>
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
+              Account created successfully
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-400">
+              Please check your email for verification instructions.
+            </p>
+          </div>
+          <a 
+            href="/auth/login" 
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 px-4 sm:px-6 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm sm:text-base font-medium transition-all duration-300 backdrop-blur-sm border border-white/20 hover:border-white/30"
+          >
+            OK 
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">

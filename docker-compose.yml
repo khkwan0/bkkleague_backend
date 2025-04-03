@@ -26,6 +26,7 @@ services:
         #    entrypoint: ["/usr/bin/mongod", "--dbpath", "/data/db", "--bind_ip", "localhost,bkkleague-mongo-1", "--bind_ip_all", "--replSet", "rs0", "--auth", "--keyFile", "/usr/src/app/mongo.keyfile"]
         #    entrypoint: ["/usr/bin/mongod", "--dbpath", "/data/db", "--bind_ip", "localhost,bkkleague-mongo-1", "--bind_ip_all", "--replSet", "rs0", "--keyFile", "/usr/src/app/mongo.keyfile"]
   adspot:
+    restart: always
     build: ./adspot
     volumes:
       - ./adspot:/usr/src/app

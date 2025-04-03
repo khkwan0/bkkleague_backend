@@ -2752,7 +2752,6 @@ fastify.get('/player/raw/:playerId', async (req, reply) => {
 })
 
 fastify.post('/user/token', async (req, reply) => {
-  console.log(req.user)
   if (typeof req?.user?.user !== 'undefined') {
     try {
       const playerId = req.user.user.id

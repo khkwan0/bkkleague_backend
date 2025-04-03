@@ -2190,6 +2190,28 @@ fastify.register((fastify, options, done) => {
     },
   })
 
+  fastify.get('/stats/team/:teamId', {
+    schema: {
+      summary:  'Team stats. Test with 2275.',
+      description: 'Team statistics',
+      tags: ['Stats'],
+    },
+    handler: async (req, reply) => {
+      try {
+        const teamId = req.params.teamId ?? null
+        if (!teamId) {
+          reply.code(404).send()
+        } else {
+          const stats = await GetSingleTeamStats(teamId)
+          reply.code(200).send({status: 'ok', data: stats})
+        }
+      } catch (e) {
+        console.log(e)
+        reply.code(500).send()
+      }
+    },
+  })
+
   fastify.get('/stats/teams/:seasonId', {
     schema: {
       summary: 'Team stats across the league',
@@ -5611,6 +5633,32 @@ async function GetLeaguePlayerStats(
     return finalStats
   } catch (e) {
     console.log(e)
+  }
+}
+
+async function GetSingleTeamStats(teamId) {
+  try {
+    const seasonId = (await GetCurrentSeason()).identifier
+    const q0 = `
+      SELECT y.*, teams.name as away_team_name
+      FROM (
+        SELECT teams.name as home_team_name, x.*
+        FROM (
+          SELECT matches.home_team_id as home_team_id, matches.away_team_id as away_team_id, matches.date, matches.home_frames, matches.away_frames, matches.home_points, matches.away_points
+          FROM matches
+          WHERE (matches.home_team_id=? OR matches.away_team_id=?)
+            AND matches.status_id=3
+        ) x
+        JOIN teams ON (teams.id = x.home_team_id)
+      ) y
+      JOIN teams ON (teams.id = y.away_team_id)
+      ORDER BY date ASC;
+    `
+    const r0 = await DoQuery(q0, [teamId, teamId])
+    return r0
+  } catch (e) {
+    console.log(e)
+    return null
   }
 }
 

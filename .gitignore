@@ -15,4 +15,5 @@ dumps/
 crons/
 log.txt
 *.csv
-*.json
+*firebase*.json
+

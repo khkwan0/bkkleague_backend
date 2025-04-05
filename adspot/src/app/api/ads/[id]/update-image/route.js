@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { getAdById } from "@/lib/ads";
 import { query } from "@/lib/db";
+import sharp from 'sharp';
 
 export async function POST(request, { params }) {
   const session = await getSession();
@@ -39,7 +40,10 @@ export async function POST(request, { params }) {
       await mkdir(uploadDir, { recursive: true });
     } catch (err) {
     }
-    await writeFile(join(uploadDir, 'ad.png'), Buffer.from(await file.arrayBuffer()));
+    await writeFile(join(uploadDir, 'ad_original.png'), Buffer.from(await file.arrayBuffer()));
+    const image = sharp(Buffer.from(await file.arrayBuffer()));
+    const resizedImage = await image.resize(327,327, { fit: 'inside' }).toBuffer();
+    await writeFile(join(uploadDir, 'ad.png'), resizedImage);
 
     // Update the background column in ad_spots table
     const prefix = 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/ads/' + ad.account_id.toString() + '/' + id.toString() + '/';

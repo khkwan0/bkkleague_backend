@@ -1050,11 +1050,12 @@ fastify.post('/avatar', async (req, reply) => {
         WHERE id=?
       `
       const r2 = await DoQuery(q2, [newFilename, playerId])
-      reply.code(200).send({status: 'ok'})
+      reply.code(200).send({status: 'ok', data: newFilename})
     } else {
       reply.code(400).send({status: 'error', error: 'invalid_params'})
     }
   } catch (e) {
+    reply.code(500).send({status: 'error', error: 'server_error'})
     console.log(e)
   }
 })

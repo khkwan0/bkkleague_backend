@@ -6156,6 +6156,7 @@ async function UpdateMatch(data, lockKey, matchId = 0) {
 
 async function UpdateFrame(data, lockKey) {
   try {
+    let isGood = false
     await lock.acquire(lockKey, async () => {
       const key = 'match_' + data.matchId
       const rawCachedFrameInfo = await CacheGet(key)
@@ -6186,16 +6187,24 @@ async function UpdateFrame(data, lockKey) {
         // handle win situation
         if (data.type === 'win') {
           // if updateable...
-          if (found) {
+          if (found && typeof data.playerIds !== 'undefined' && data.playerIds.length > 0) {
+            console.log('windatra', data)
             cachedFrameInfo.frames[i].winner = data.winnerTeamId
             cachedFrameInfo.frames[i].winningPlayers = data.playerIds
             cachedFrameInfo.frames[i].goldenBreak = data?.goldenBreak ?? false
+            const serializedMatchInfo = JSON.stringify(cachedFrameInfo)
+            CacheSet(key, serializedMatchInfo)
+            isGood = true
           } else {
             // otherwise, add the frame data
             // note: this _shouldn't_ happen if front end enforces
             // players to be filled out before a "win" can be marked
             // update 22.03.2025 - disabled the front end check for win,
             // player no longer needs to be filled out before a win can be marked
+            // update 09.04.2025 - reverted back from update 22.03.2025, the
+            // frontend now checks as well, if code flow does get here somehow,
+            // then do nothing
+            /*
             cachedFrameInfo.frames.push({
               frameIdx: data.frameIdx,
               winner: data.winnerTeamId,
@@ -6206,6 +6215,7 @@ async function UpdateFrame(data, lockKey) {
               frameNumber: data.frameNumber,
               goldenBreak: data?.goldenBreak ?? false,
             })
+              */
           }
         } else if (data.type === 'players') {
           if (found) {
@@ -6218,12 +6228,15 @@ async function UpdateFrame(data, lockKey) {
             }
           } else {
             const newFrame = {
+              frameIndex: data.frameIdx,
               frameIdx: data.frameIdx,
               winner: 0,
               winningPlayers: [],
               homePlayerIds: [],
               awayPlayerIds: [],
               frameType: data.frameType,
+              type: data.frameType,
+              mfpp: data.mfpp,
               frameNumber: data.frameNumber,
               goldenBreak: data?.goldenBreak ?? false,
             }
@@ -6234,17 +6247,19 @@ async function UpdateFrame(data, lockKey) {
             }
             cachedFrameInfo.frames.push(newFrame)
           }
+          const serializedMatchInfo = JSON.stringify(cachedFrameInfo)
+          CacheSet(key, serializedMatchInfo)
+          isGood = true
         } else if (data.type === 'clearwin') {
           if (found) {
             cachedFrameInfo.frames[i].winner = 0
             cachedFrameInfo.frames[i].winningPlayers = []
             cachedFrameInfo.frames[i].goldenBreak = false
+            const serializedMatchInfo = JSON.stringify(cachedFrameInfo)
+            CacheSet(key, serializedMatchInfo)
           } 
         }
-
-        // save it
-        const serializedMatchInfo = JSON.stringify(cachedFrameInfo)
-        CacheSet(key, serializedMatchInfo)
+        return false
       } else {
         fastify.log.info('NEW CACHE ENTRY: ' + key)
         // completely new match, not in redis yet
@@ -6259,6 +6274,7 @@ async function UpdateFrame(data, lockKey) {
         // enforced by the frontend.
         if (data.type === 'win') {
           frameInfo.frames.push({
+            frameIndex: data.frameIdx,
             frameIdx: data.frameIdx,
             winner: data.winnerTeamId,
             winningPlayers: data.playerIds,
@@ -6268,26 +6284,33 @@ async function UpdateFrame(data, lockKey) {
             frameNumber: data.frameNumber,
           })
         } else if (data.type === 'players') {
+          const homePlayerIds = []
+          const awayPlayerIds = []
+          if (data.side === 'home') {
+            homePlayerIds[data.playerIdx] = data.playerId
+          } else {
+            awayPlayerIds[data.playerIdx] = data.playerId
+          }
           const newFrame = {
+            frameIndex: data.frameIdx,
             frameIdx: data.frameIdx,
             winner: 0,
             winningPlayers: [],
-            homePlayerIds: [],
-            awayPlayerIds: [],
+            homePlayerIds: homePlayerIds,
+            awayPlayerIds: awayPlayerIds,
+            type: data.frameType,
             frameType: data.frameType,
+            mfpp: data.mfpp,
             frameNumber: data.frameNumber,
-          }
-          if (data.side === 'home') {
-            newFrame.homePlayerIds[data.playerIdx] = data.playerId
-          } else {
-            newFrame.awayPlayerIds[data.playerIdx] = data.playerId
           }
           frameInfo.frames.push(newFrame)
         }
         const serializedFrameInfo = JSON.stringify(frameInfo)
         CacheSet(key, serializedFrameInfo)
+        isGood = true
       }
     })
+    return isGood
   } catch (e) {
     console.log(e)
   }
@@ -7972,12 +7995,14 @@ fastify.ready().then(() => {
                   data.data.type = data.type
                   const res = await UpdateFrame(data.data, room) // use room as a key to lock
                   await Unfinalize(data.matchId)
-                  fastify.io.to(room).emit('frame_update', {
-                    type: 'win',
-                    frameIdx: data.data.frameIdx,
-                    winnerTeamId: data.data.winnerTeamId,
-                    goldenBreak: data?.data?.goldenBreak ?? false,
-                  })
+                  if (res) {
+                    fastify.io.to(room).emit('frame_update', {
+                      type: 'win',
+                      frameIdx: data.data.frameIdx,
+                      winnerTeamId: data.data.winnerTeamId,
+                      goldenBreak: data?.data?.goldenBreak ?? false,
+                    })
+                  }
                 }
 
                 if (data.type === 'clearwin') {
